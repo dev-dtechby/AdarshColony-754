@@ -32,11 +32,14 @@ ChartJS.register(
 const customTooltip = (tooltipItems: TooltipItem<'line'>[]) => {
   let sum = 0;
 
-  tooltipItems.forEach(function (tooltipItem) {
-    sum += tooltipItem.parsed.y;
+  tooltipItems.forEach((tooltipItem) => {
+    const value = tooltipItem?.parsed?.y ?? 0;
+    sum += Number(value);
   });
+
   return "Sum: " + sum;
 };
+
 
 const PositionTooltip = ({ height = 350 }) => {
   const { theme: config, setTheme: setConfig } = useThemeStore();
