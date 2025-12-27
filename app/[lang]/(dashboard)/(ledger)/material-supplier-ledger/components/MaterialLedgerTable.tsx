@@ -199,7 +199,7 @@ export default function MaterialLedgerTable() {
                         <Edit className="h-4 w-4" />
                       </Button>
 
-                      <Button size="icon" variant="destructive">
+                      <Button size="icon" variant="outline">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </td>
