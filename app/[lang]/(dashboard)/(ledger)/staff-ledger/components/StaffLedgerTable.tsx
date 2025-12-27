@@ -92,7 +92,7 @@ export default function StaffLedgerTable() {
                 className="px-4 md:px-6"
                 onClick={() => toggleForm("exp")}
                 disabled={!selectedStaff}
-                variant={openForm === "exp" ? "default" : "outline"}
+                variant={openForm === "exp" ? undefined: "outline"}
               >
                 Expense Entry
               </Button>
@@ -101,7 +101,7 @@ export default function StaffLedgerTable() {
                 className="px-4 md:px-6"
                 onClick={() => toggleForm("received")}
                 disabled={!selectedStaff}
-                variant={openForm === "received" ? "default" : "outline"}
+                variant={openForm === "received" ? undefined : "outline"}
               >
                 Amount Received
               </Button>
@@ -163,7 +163,7 @@ export default function StaffLedgerTable() {
 
                     <td className="p-3 flex gap-2">
                       <Button size="sm" variant="outline">Edit</Button>
-                      <Button size="sm" variant="destructive">Delete</Button>
+                      <Button size="sm" variant="soft">Delete</Button>
                     </td>
                   </tr>
                 ))}
