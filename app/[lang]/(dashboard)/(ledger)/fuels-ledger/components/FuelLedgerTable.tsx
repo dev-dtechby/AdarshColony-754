@@ -121,11 +121,11 @@ export default function FuelLedgerTable() {
 
   const totalDiesel = filteredData
     .filter((i) => i.particular === "Diesel")
-    .reduce((sum, i) => sum + (i.qty || 0), 0);
+    .reduce((sum, i) => sum + Number(i.qty ?? 0), 0);
 
   const totalPetrol = filteredData
     .filter((i) => i.particular === "Petrol")
-    .reduce((sum, i) => sum + (i.qty || 0), 0);
+    .reduce((sum, i) => sum + Number(i.qty ?? 0), 0);
 
   return (
     <>
