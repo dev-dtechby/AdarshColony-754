@@ -7,8 +7,15 @@ import { Autoplay } from 'swiper/modules';
 const AllComponents = () => {
 
 
-  const menus = menusConfig.sidebarNav.modern[2]?.child?.[0]?.nested ?? [];
-  const menus2 = menusConfig.sidebarNav.modern[2]?.child?.[1]?.nested ?? [];
+  function getNested(item: any) {
+    return Array.isArray(item?.nested) ? item.nested : [];
+  }
+
+  const base = menusConfig.sidebarNav.modern[2]?.child ?? [];
+
+  const menus = getNested(base[0]);
+  const menus2 = getNested(base[1]);
+
   const data = [...menus, ...menus2];
   return (
     <section className="py-16 2xl:py-20  relative " id="features">
