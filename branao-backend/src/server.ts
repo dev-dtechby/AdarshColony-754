@@ -1,23 +1,23 @@
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
-import routes from "./routes";   // ✅ VERY IMPORTANT
+import app from "./app"; // ✅ app.ts se express instance
 
+// ====================
+// Load ENV
+// ====================
 dotenv.config();
 
-const app = express();
+// ====================
+// Port
+// ====================
+const PORT = Number(process.env.PORT) || 5000;
 
-app.use(cors());
-app.use(express.json());
-
-// 🔥 THIS LINE WAS MISSING / WRONG EARLIER
-app.use("/api", routes);
-
-const PORT = process.env.PORT || 5000;
-
+// ====================
+// Start Server
+// ====================
 app.listen(PORT, () => {
   console.log("=====================================");
-  console.log("🚀 Branao Backend running on port", PORT);
-  console.log("🌍 Environment :", process.env.NODE_ENV || "development");
+  console.log("🚀 Branao Backend running on port:", PORT);
+  console.log("🌍 Environment:", process.env.NODE_ENV || "development");
   console.log("=====================================");
 });

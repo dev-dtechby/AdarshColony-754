@@ -18,7 +18,7 @@ export default function DepartmentPage() {
 
   const { toast } = useToast();
 
-  const API = "http://localhost:5000/api/departments";
+  const API =process.env.NEXT_PUBLIC_API_BASE_URL + "/api/departments";
 
   /* ================= LOAD ================= */
   const load = async () => {
