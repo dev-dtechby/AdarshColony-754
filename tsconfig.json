@@ -49,5 +49,8 @@
     "app/[lang]/(dashboard)/(chart)/(re-chart)/charts-rechart-radialbar/basic-radial-bar.jsx",
     "app/[lang]/(dashboard)/(chart)/(re-chart)/charts-rechart-bar/barchart-with-multixaxis.tsx"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "branao-backend",
+    "node_modules"
+  ]
 }

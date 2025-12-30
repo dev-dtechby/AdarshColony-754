@@ -1,34 +1,53 @@
 /** @type {import('next').NextConfig} */
 
-
 const nextConfig = {
+  /**
+   * 🔒 TypeScript
+   * Backend (branao-backend) ko tsconfig.json me exclude kiya gaya hai,
+   * isliye yahan errors ignore karne ki zarurat nahi
+   */
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+
+  /**
+   * 🧩 SVG handling
+   * - *.svg?url  → normal file
+   * - *.svg      → React component
+   */
   webpack(config) {
     // Grab the existing rule that handles SVG imports
-    const fileLoaderRule = config.module.rules.find((rule) =>
-      rule.test?.test?.(".svg")
+    const fileLoaderRule = config.module.rules.find(
+      (rule) => rule.test?.test?.(".svg")
     );
 
     config.module.rules.push(
-      // Reapply the existing rule, but only for svg imports ending in ?url
+      // *.svg?url → file
       {
         ...fileLoaderRule,
         test: /\.svg$/i,
-        resourceQuery: /url/, // *.svg?url
+        resourceQuery: /url/,
       },
-      // Convert all other *.svg imports to React components
+      // *.svg → React component
       {
         test: /\.svg$/i,
         issuer: fileLoaderRule.issuer,
-        resourceQuery: { not: [...fileLoaderRule.resourceQuery.not, /url/] }, // exclude if *.svg?url
+        resourceQuery: {
+          not: [...fileLoaderRule.resourceQuery.not, /url/],
+        },
         use: ["@svgr/webpack"],
       }
     );
 
-    // Modify the file loader rule to ignore *.svg, since we have it handled now.
+    // Prevent default loader from processing SVGs
     fileLoaderRule.exclude = /\.svg$/i;
 
     return config;
   },
+
+  /**
+   * 🖼️ External image domains
+   */
   images: {
     remotePatterns: [
       {
@@ -50,6 +69,5 @@ const nextConfig = {
     ],
   },
 };
-
 
 module.exports = nextConfig;
