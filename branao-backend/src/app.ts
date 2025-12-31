@@ -5,6 +5,7 @@ import morgan from "morgan";
 // Routes
 import siteRoutes from "./modules/site/site.routes";
 import departmentRoutes from "./modules/department/department.routes";
+import siteExpRoutes from "./modules/site-exp/site-exp.routes";
 
 const app = express();
 
@@ -55,7 +56,7 @@ app.get("/", (_req, res) => {
 // ====================
 app.use("/api/sites", siteRoutes);
 app.use("/api/departments", departmentRoutes);
-
+app.use("/api/site-exp", siteExpRoutes);
 // ====================
 // 404 Handler
 // ====================

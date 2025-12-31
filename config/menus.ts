@@ -70,13 +70,13 @@ export const menusConfig = {
           icon: Graph,
         },
         {
-          title: "Site Exp Details",
-          href: "/site-exp",
-          icon: Cart,
-        },
-        {
           title: "All Site List",
           href: "/all-site-list",
+          icon: Cart,
+        },
+          {
+          title: "Site Exp Details",
+          href: "/site-exp",
           icon: Cart,
         },
         {
@@ -1019,13 +1019,13 @@ export const menusConfig = {
             icon: Graph,
           },
           {
-            title: "Site Exp Details",
-            href: "/site-exp",
+            title: "All Site List",
+            href: "/all-site-list",
             icon: Cart,
           },
           {
-            title: "All Site List",
-            href: "/all-site-list",
+            title: "Site Exp Details",
+            href: "/site-exp",
             icon: Cart,
           },
           {
@@ -2076,13 +2076,13 @@ export const menusConfig = {
             icon: Graph,
           },
           {
-            title: "Site Exp Details",
-            href: "/site-exp",
+            title: "All Site List",
+            href: "/all-site-list",
             icon: Cart,
           },
           {
-            title: "All Site List",
-            href: "/all-site-list",
+            title: "Site Exp Details",
+            href: "/site-exp",
             icon: Cart,
           },
           {

@@ -7,87 +7,72 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/* ================= ENUM ================= */
-enum DocumentType {
-  SD
-  WORK_ORDER
-  TENDER
-}
-
-/* ================= DEPARTMENT =================
-   ✔ Master table
-   ✔ Will be seeded (WRD, PHED, JJM, CGMSC)
-================================================ */
+/// *
+///  * ================= DEPARTMENT =================
+///  * ✔ Master table
+///  * ✔ Will be seeded (WRD, PHED, JJM, CGMSC)
+///  * ================================================
 model Department {
   id        String   @id @default(cuid())
   name      String   @unique
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   sites     Site[]
 }
 
-/* ================= SITE ================= */
+/// *
+///  * ================= SITE =================
 model Site {
-  id           String      @id @default(cuid())
+  id           String        @id @default(cuid())
   siteName     String
   tenderNo     String?
-  sdAmount     Decimal?    @db.Decimal(18,2)
-
-  // 🔑 Department relation (optional but FK-safe)
+  sdAmount     Decimal?      @db.Decimal(18, 2)
   departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  expenses     SiteExpense[] // ✅ ADD THIS
 
-  estimate     SiteEstimate?
-  documents    SiteDocument[]
-
-  isDeleted    Boolean     @default(false)
-
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  isDeleted  Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  department Department?    @relation(fields: [departmentId], references: [id])
+  documents  SiteDocument[]
+  estimate   SiteEstimate?
 
   @@index([departmentId])
   @@index([isDeleted])
 }
 
-/* ================= SITE ESTIMATE =================
-   ✔ One-to-one with Site
-   ✔ Cascades on Site delete
-================================================ */
+/// *
+///  * ================= SITE ESTIMATE =================
+///  * ✔ One-to-one with Site
+///  * ✔ Cascades on Site delete
+///  * ================================================
 model SiteEstimate {
-  id        String   @id @default(cuid())
-  siteId    String   @unique
-  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-
-  // Concrete
-  cement    Decimal? @db.Decimal(18,2)
-  metal     Decimal? @db.Decimal(18,2)
-  sand      Decimal? @db.Decimal(18,2)
-  labour    Decimal? @db.Decimal(18,2)
-  royalty   Decimal? @db.Decimal(18,2)
-  overhead  Decimal? @db.Decimal(18,2)
-
-  // CNS
-  lead              Decimal? @db.Decimal(18,2)
-  dressing          Decimal? @db.Decimal(18,2)
-  waterCompaction   Decimal? @db.Decimal(18,2)
-  loading           Decimal? @db.Decimal(18,2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  siteId          String   @unique
+  cement          Decimal? @db.Decimal(18, 2)
+  metal           Decimal? @db.Decimal(18, 2)
+  sand            Decimal? @db.Decimal(18, 2)
+  labour          Decimal? @db.Decimal(18, 2)
+  royalty         Decimal? @db.Decimal(18, 2)
+  overhead        Decimal? @db.Decimal(18, 2)
+  lead            Decimal? @db.Decimal(18, 2)
+  dressing        Decimal? @db.Decimal(18, 2)
+  waterCompaction Decimal? @db.Decimal(18, 2)
+  loading         Decimal? @db.Decimal(18, 2)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  site            Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
 }
 
-/* ================= SITE DOCUMENT =================
-   ✔ Cloudinary-based storage
-   ✔ SD & WORK_ORDER unique per site
-   ✔ TENDER multiple allowed
-================================================ */
+/// *
+///  * ================= SITE DOCUMENT =================
+///  * ✔ Cloudinary-based storage
+///  * ✔ SD & WORK_ORDER unique per site
+///  * ✔ TENDER multiple allowed
+///  * ================================================
 model SiteDocument {
   id           String       @id @default(cuid())
   siteId       String
-  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
-
   type         DocumentType
   url          String?
   secureUrl    String
@@ -96,10 +81,36 @@ model SiteDocument {
   bytes        Int?
   format       String?
   originalName String?
-
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  @@index([siteId, type])
   @@unique([siteId, type], map: "uniq_site_single_docs")
+  @@index([siteId, type])
+}
+
+/// *
+///  * ================= ENUM =================
+enum DocumentType {
+  SD
+  WORK_ORDER
+  TENDER
+}
+
+model SiteExpense {
+  id String @id @default(cuid())
+
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  expenseDate    DateTime
+  expenseTitle   String
+  summary        String
+  paymentDetails String?
+  amount         Decimal  @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
 }

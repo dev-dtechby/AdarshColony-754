@@ -95,6 +95,8 @@
     "framer-motion": "^10.16.3",
     "google-map-react": "^2.2.1",
     "html-to-image": "^1.11.11",
+    "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.2",
     "leaflet": "^1.9.4",
     "lucide": "^0.270.0",
     "lucide-react": "^0.269.0",
@@ -141,6 +143,7 @@
     "tesseract.js": "^6.0.1",
     "unist-util-visit": "^5.0.0",
     "vaul": "^0.8.0",
+    "xlsx": "^0.18.5",
     "zod": "^3.25.76",
     "zustand": "^4.4.1"
   },
