@@ -6,7 +6,18 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
+
+/* ========= SHADCN ========= */
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+/* ========= COMPONENT ========= */
+import DepartmentMaster from "../../department/components/DepartmentMaster";
 
 /* ================= TYPES ================= */
 interface Department {
@@ -37,13 +48,13 @@ export default function SiteForm() {
 
   /* ================= DEPARTMENT ================= */
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [showDeptModal, setShowDeptModal] = useState(false);
+  const [openDeptDialog, setOpenDeptDialog] = useState(false);
 
   /* ================= UX ================= */
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  /* ================= API (SAFE) ================= */
+  /* ================= API ================= */
   const BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
@@ -54,12 +65,11 @@ export default function SiteForm() {
   const loadDepartments = async () => {
     try {
       const res = await fetch(DEPT_API);
-      if (!res.ok) throw new Error("Fetch failed");
+      if (!res.ok) throw new Error();
 
       const json = await res.json();
       setDepartments(json?.data ?? []);
-    } catch (err) {
-      console.error("Department load error", err);
+    } catch {
       toast({
         title: "❌ Error",
         description: "Failed to load departments",
@@ -69,21 +79,11 @@ export default function SiteForm() {
 
   useEffect(() => {
     loadDepartments();
-
-    // 🔥 Listen message from Department modal
-    const listener = (e: MessageEvent) => {
-      if (e.data === "DEPT_ADDED") {
-        loadDepartments();
-      }
-    };
-    window.addEventListener("message", listener);
-
-    return () => window.removeEventListener("message", listener);
   }, []);
 
   /* ================= HELPERS ================= */
   const handleEstimateChange = (key: string, value: string) => {
-    setEstimate(prev => ({ ...prev, [key]: value }));
+    setEstimate((prev) => ({ ...prev, [key]: value }));
   };
 
   const buildFormData = () => {
@@ -107,7 +107,7 @@ export default function SiteForm() {
 
     if (sdFile) fd.append("sdFile", sdFile);
     if (workOrderFile) fd.append("workOrderFile", workOrderFile);
-    tenderDocs.forEach(f => fd.append("tenderDocs", f));
+    tenderDocs.forEach((f) => fd.append("tenderDocs", f));
 
     return fd;
   };
@@ -130,7 +130,7 @@ export default function SiteForm() {
 
   /* ================= SAVE ================= */
   const handleSave = async () => {
-    if (!siteName) {
+    if (!siteName.trim()) {
       toast({ title: "❌ Site Name is required" });
       return;
     }
@@ -164,12 +164,12 @@ export default function SiteForm() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>
             <Label>Site Name</Label>
-            <Input value={siteName} onChange={e => setSiteName(e.target.value)} />
+            <Input value={siteName} onChange={(e) => setSiteName(e.target.value)} />
           </div>
 
           <div>
             <Label>Tender No</Label>
-            <Input value={tenderNo} onChange={e => setTenderNo(e.target.value)} />
+            <Input value={tenderNo} onChange={(e) => setTenderNo(e.target.value)} />
           </div>
 
           <div>
@@ -178,10 +178,10 @@ export default function SiteForm() {
               <select
                 className="w-full border rounded-md px-3 py-2"
                 value={departmentId}
-                onChange={e => setDepartmentId(e.target.value)}
+                onChange={(e) => setDepartmentId(e.target.value)}
               >
                 <option value="">Select</option>
-                {departments.map(d => (
+                {departments.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
@@ -192,7 +192,7 @@ export default function SiteForm() {
                 variant="outline"
                 size="icon"
                 type="button"
-                onClick={() => setShowDeptModal(true)}
+                onClick={() => setOpenDeptDialog(true)}
               >
                 <Plus size={16} />
               </Button>
@@ -204,36 +204,23 @@ export default function SiteForm() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>
             <Label>SD Amount</Label>
-            <Input value={sdAmount} onChange={e => setSdAmount(e.target.value)} />
+            <Input value={sdAmount} onChange={(e) => setSdAmount(e.target.value)} />
           </div>
 
           <div>
             <Label>Upload SD</Label>
-            <Input
-              ref={sdFileRef}
-              type="file"
-              onChange={e => setSdFile(e.target.files?.[0] || null)}
-            />
+            <Input ref={sdFileRef} type="file" onChange={(e) => setSdFile(e.target.files?.[0] || null)} />
           </div>
 
           <div>
             <Label>Upload Work Order</Label>
-            <Input
-              ref={workOrderFileRef}
-              type="file"
-              onChange={e => setWorkOrderFile(e.target.files?.[0] || null)}
-            />
+            <Input ref={workOrderFileRef} type="file" onChange={(e) => setWorkOrderFile(e.target.files?.[0] || null)} />
           </div>
         </div>
 
         <div>
           <Label>All Tender Documents</Label>
-          <Input
-            ref={tenderDocsRef}
-            type="file"
-            multiple
-            onChange={e => setTenderDocs(Array.from(e.target.files || []))}
-          />
+          <Input ref={tenderDocsRef} type="file" multiple onChange={(e) => setTenderDocs(Array.from(e.target.files || []))} />
         </div>
 
         {/* ESTIMATE */}
@@ -250,12 +237,12 @@ export default function SiteForm() {
             "Dressing",
             "Water & Compaction",
             "Loading",
-          ].map(item => (
+          ].map((item) => (
             <Input
               key={item}
               placeholder={item}
               value={estimate[item] || ""}
-              onChange={e => handleEstimateChange(item, e.target.value)}
+              onChange={(e) => handleEstimateChange(item, e.target.value)}
             />
           ))}
         </div>
@@ -272,26 +259,21 @@ export default function SiteForm() {
         </div>
       </Card>
 
-      {/* DEPARTMENT MODAL */}
-      {showDeptModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center">
-          <div className="bg-background w-[700px] h-[500px] rounded-xl relative">
-            <button
-              className="absolute right-3 top-3"
-              onClick={() => {
-                setShowDeptModal(false);
-                loadDepartments();
-              }}
-            >
-              <X />
-            </button>
-            <iframe
-              src="/en/department"
-              className="w-full h-full rounded-xl"
-            />
-          </div>
-        </div>
-      )}
+      {/* ================= DEPARTMENT MASTER DIALOG ================= */}
+      <Dialog open={openDeptDialog} onOpenChange={setOpenDeptDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Department Master</DialogTitle>
+          </DialogHeader>
+
+          <DepartmentMaster
+            onChanged={() => {
+              loadDepartments();
+              setOpenDeptDialog(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

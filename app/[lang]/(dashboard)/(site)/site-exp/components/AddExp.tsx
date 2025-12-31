@@ -100,7 +100,7 @@ export default function AddExp({
     }
   };
 
-  /* ================= IMPORT EXCEL ================= */
+  /* ================= IMPORT EXCEL (SITE NAME BASED) ================= */
   const handleExcelImport = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -118,11 +118,21 @@ export default function AddExp({
       if (!rows.length) throw new Error();
 
       for (const row of rows) {
+        const site = sites.find(
+          (s) =>
+            s.siteName.trim().toLowerCase() ===
+            String(row.siteName).trim().toLowerCase()
+        );
+
+        if (!site) {
+          throw new Error(`Invalid site name: ${row.siteName}`);
+        }
+
         await fetch(EXP_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            siteId: row.siteId,
+            siteId: site.id,
             expenseDate: row.expenseDate,
             expenseTitle: row.expenseTitle,
             expenseSummary: row.expenseSummary,
@@ -132,11 +142,14 @@ export default function AddExp({
         });
       }
 
-      toast({ title: "✅ Bulk Import Completed" });
+      toast({ title: "✅ Bulk Import Completed Successfully" });
       onSaved?.();
       onClose?.();
-    } catch {
-      toast({ title: "❌ Invalid Excel format / Import failed" });
+    } catch (err: any) {
+      toast({
+        title: "❌ Import Failed",
+        description: err.message || "Invalid Excel format",
+      });
     } finally {
       setLoading(false);
       e.target.value = "";
@@ -267,14 +280,15 @@ export default function AddExp({
             <p className="font-medium">Excel columns must be exactly:</p>
 
             <pre className="bg-muted p-3 rounded text-xs">
-siteId | expenseDate | expenseTitle | expenseSummary | paymentDetails | amount
+siteName | expenseDate | expenseTitle | expenseSummary | paymentDetails | amount
             </pre>
 
+            <p>✔ siteName must exactly match Site Master</p>
             <p>✔ expenseDate format: <b>YYYY-MM-DD</b></p>
-            <p>✔ siteId must be valid Site ID</p>
             <p>✔ amount must be numeric</p>
+
             <p className="text-red-500">
-              ❌ Do not change column names
+              ❌ Column names must not be changed
             </p>
           </div>
         </DialogContent>
