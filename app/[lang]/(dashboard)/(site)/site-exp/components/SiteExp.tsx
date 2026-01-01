@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, Download, Edit, Trash2 } from "lucide-react";
 import SiteSummaryCards from "../../site-summary/components/SiteSummaryCards";
 import AddExp from "./AddExp";
+import EditExp from "./EditExp";
 
 /* ========= SHADCN ========= */
 import {
@@ -29,6 +30,8 @@ import {
   exportToExcel,
   exportToPDF,
 } from "@/lib/exportUtils";
+
+import DeleteConfirmDialog from "@/components/common/DeleteConfirmDialog";
 
 /* ================= TYPES ================= */
 interface Site {
@@ -61,6 +64,13 @@ export default function SiteExp() {
 
   const [sites, setSites] = useState<Site[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [openEdit, setOpenEdit] = useState(false);
+  const [selectedEditExp, setSelectedEditExp] = useState<any>(null);
+
+  /* 🔥 DELETE STATES (ONLY ADDITION) */
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [selectedExp, setSelectedExp] = useState<Expense | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   /* ================= LOAD SITES ================= */
   useEffect(() => {
@@ -136,6 +146,28 @@ export default function SiteExp() {
         ]
       : []),
   ];
+
+  /* ================= SOFT DELETE (ONLY NEW LOGIC) ================= */
+  const confirmDelete = async () => {
+    if (!selectedExp) return;
+
+    try {
+      setDeleteLoading(true);
+      const res = await fetch(`${EXP_API}/${selectedExp.id}`, {
+        method: "DELETE", // ✅ SOFT DELETE
+      });
+
+      if (!res.ok) throw new Error();
+
+      setDeleteOpen(false);
+      setSelectedExp(null);
+      loadExpenses();
+    } catch {
+      alert("❌ Delete failed");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   return (
     <>
@@ -213,18 +245,10 @@ export default function SiteExp() {
           )}
         </CardHeader>
 
-        {/* ================= TABLE (FINAL FORCE SCROLL) ================= */}
+        {/* ================= TABLE ================= */}
         {viewMode === "exp" && (
           <CardContent className="p-0">
-            {/* 🔥 INLINE CSS — NOTHING CAN BLOCK THIS */}
-            <div
-              style={{
-                width: "100%",
-                maxWidth: "100vw",
-                overflowX: "auto",
-                overflowY: "hidden",
-              }}
-            >
+            <div style={{ width: "100%", overflowX: "auto" }}>
               <div style={{ minWidth: "1200px" }}>
                 <table className="w-full text-sm border-collapse">
                   <thead className="bg-muted/60 sticky top-0 border-b">
@@ -257,10 +281,27 @@ export default function SiteExp() {
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex justify-center gap-2">
-                            <Button size="icon" variant="outline">
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedEditExp(row);
+                                setOpenEdit(true);
+                              }}
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button size="icon" variant="outline">
+
+
+                            {/* 🔥 ONLY DELETE BUTTON UPDATED */}
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedExp(row);
+                                setDeleteOpen(true);
+                              }}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -287,6 +328,42 @@ export default function SiteExp() {
 
         {viewMode === "summary" && <SiteSummaryCards />}
       </Card>
+
+      {/* 🔥 DELETE CONFIRM DIALOG (ONLY ADDITION) */}
+      <DeleteConfirmDialog
+        open={deleteOpen}
+        title="Delete Expense?"
+        description="This expense entry will be moved to Deleted Records. You can restore it later."
+        loading={deleteLoading}
+        onCancel={() => {
+          setDeleteOpen(false);
+          setSelectedExp(null);
+        }}
+        onConfirm={confirmDelete}
+      />
+      <Dialog open={openEdit} onOpenChange={setOpenEdit}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit Site Expense</DialogTitle>
+          </DialogHeader>
+
+          {selectedEditExp && (
+            <EditExp
+              expense={{
+                id: selectedEditExp.id,
+                siteId: selectedEditExp.site?.id || "",
+                expenseDate: selectedEditExp.expenseDate,
+                expenseTitle: selectedEditExp.expenseTitle,
+                expenseSummary: selectedEditExp.summary,
+                paymentDetails: selectedEditExp.paymentDetails,
+                amount: selectedEditExp.amount,
+              }}
+              onClose={() => setOpenEdit(false)}
+              onSaved={loadExpenses}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ADD EXP MODAL */}
       <Dialog open={openAddExp} onOpenChange={setOpenAddExp}>

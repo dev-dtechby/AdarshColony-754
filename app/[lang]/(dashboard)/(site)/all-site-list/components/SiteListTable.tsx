@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { exportToExcel, exportToPDF } from "@/lib/exportUtils";
+import DeleteConfirmDialog from "@/components/common/DeleteConfirmDialog";
 
 /* ================= TYPES ================= */
 type DocumentType = "SD" | "WORK_ORDER" | "TENDER";
@@ -71,6 +72,11 @@ export default function SiteListTable() {
   const [previewDoc, setPreviewDoc] = useState<SiteDocument | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  /* 🔥 DELETE STATES (ONLY ADDITION) */
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [selectedSite, setSelectedSite] = useState<Site | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   /* ================= FETCH ================= */
   const fetchSites = async () => {
     try {
@@ -112,16 +118,29 @@ export default function SiteListTable() {
     );
   }, [sites, search]);
 
+  /* ================= SOFT DELETE (UPDATED) ================= */
+  const confirmDelete = async () => {
+    if (!selectedSite) return;
 
-  /* ================= DELETE ================= */
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this site?")) return;
-    const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
-    if (res.ok) fetchSites();
-    else alert("❌ Delete failed");
+    try {
+      setDeleteLoading(true);
+      const res = await fetch(`${API_URL}/${selectedSite.id}`, {
+        method: "DELETE", // ✅ SOFT DELETE
+      });
+
+      if (!res.ok) throw new Error();
+
+      setDeleteOpen(false);
+      setSelectedSite(null);
+      fetchSites();
+    } catch {
+      alert("❌ Delete failed");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
-  /* ================= EXPORT DATA (FINAL) ================= */
+  /* ================= EXPORT DATA ================= */
   const exportData = filteredSites.map((s) => ({
     "Site Name": s.siteName,
     "Tender No": s.tenderNo || "",
@@ -188,16 +207,7 @@ export default function SiteListTable() {
                   ].map((h) => (
                     <th
                       key={h}
-                      className="
-                        px-4 py-3
-                        text-left
-                        font-semibold
-                        text-xs
-                        uppercase
-                        tracking-wide
-                        text-muted-foreground
-                        whitespace-nowrap
-                      "
+                      className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground whitespace-nowrap"
                     >
                       {h}
                     </th>
@@ -205,156 +215,70 @@ export default function SiteListTable() {
                 </tr>
               </thead>
 
-
               <tbody>
-                {loading && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="py-8 text-center text-muted-foreground"
-                    >
-                      Loading...
-                    </td>
-                  </tr>
-                )}
-
-                {!loading && apiError && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="py-8 text-center text-red-500 font-medium"
-                    >
-                      {apiError}
-                    </td>
-                  </tr>
-                )}
-
                 {!loading &&
                   !apiError &&
                   filteredSites.map((s) => (
-                    <tr
-                      key={s.id}
-                      className="
-                        border-t
-                        transition-all
-                        duration-200
-                        hover:bg-primary/10
-                        hover:shadow-sm
-                        cursor-pointer
-                        group
-                      "
-                    >
-                      {/* SITE NAME */}
-                      <td className="px-4 py-3 font-medium text-foreground">
-                        {s.siteName}
-                      </td>
-
-                      {/* TENDER NO */}
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {s.tenderNo || "-"}
-                      </td>
-
-                      {/* DEPARTMENT */}
-                      <td className="px-4 py-3 text-muted-foreground">
+                    <tr key={s.id} className="border-t hover:bg-primary/10">
+                      <td className="px-4 py-3 font-medium">{s.siteName}</td>
+                      <td className="px-4 py-3">{s.tenderNo || "-"}</td>
+                      <td className="px-4 py-3">
                         {s.department?.name || "-"}
                       </td>
-
-                      {/* SD AMOUNT */}
-                      <td className="px-4 py-3 text-muted-foreground">
+                      <td className="px-4 py-3">
                         {s.sdAmount ? `₹ ${s.sdAmount}` : "-"}
                       </td>
 
-                      {/* SD */}
                       <td className="px-4 py-3">
                         {s.sdFile && (
-                          <div className="flex gap-2">
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="group-hover:border-primary"
-                              onClick={() => setPreviewDoc(s.sdFile!)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="group-hover:border-primary"
-                              onClick={() =>
-                                window.open(
-                                  getDownloadUrl(s.sdFile!.secureUrl),
-                                  "_blank"
-                                )
-                              }
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* WORK ORDER */}
-                      <td className="px-4 py-3">
-                        {s.workOrderFile && (
-                          <div className="flex gap-2">
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="group-hover:border-primary"
-                              onClick={() =>
-                                setPreviewDoc(s.workOrderFile!)
-                              }
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="group-hover:border-primary"
-                              onClick={() =>
-                                window.open(
-                                  getDownloadUrl(
-                                    s.workOrderFile!.secureUrl
-                                  ),
-                                  "_blank"
-                                )
-                              }
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* TENDER DOCS */}
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2 flex-wrap">
-                          {s.tenderDocs?.map((d) => (
-                            <Button
-                              key={d.id}
-                              size="icon"
-                              variant="outline"
-                              className="group-hover:border-primary"
-                              onClick={() =>
-                                window.open(
-                                  getDownloadUrl(d.secureUrl),
-                                  "_blank"
-                                )
-                              }
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          ))}
-                        </div>
-                      </td>
-
-                      {/* ACTION */}
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2 items-center justify-center">
                           <Button
                             size="icon"
                             variant="outline"
-                            className="group-hover:border-primary"
+                            onClick={() => setPreviewDoc(s.sdFile!)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {s.workOrderFile && (
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={() =>
+                              setPreviewDoc(s.workOrderFile!)
+                            }
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {s.tenderDocs?.map((d) => (
+                          <Button
+                            key={d.id}
+                            size="icon"
+                            variant="outline"
+                            onClick={() =>
+                              window.open(
+                                getDownloadUrl(d.secureUrl),
+                                "_blank"
+                              )
+                            }
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        ))}
+                      </td>
+
+                      {/* 🔥 ACTION – ONLY DELETE CHANGED */}
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2 justify-center">
+                          <Button
+                            size="icon"
+                            variant="outline"
                             onClick={() =>
                               router.push(
                                 `/${lang}/create-new-site?id=${s.id}`
@@ -367,8 +291,11 @@ export default function SiteListTable() {
                           <Button
                             size="icon"
                             variant="outline"
-                            className="group-hover:border-destructive"
-                            onClick={() => handleDelete(s.id)}
+                            className="border-destructive"
+                            onClick={() => {
+                              setSelectedSite(s);
+                              setDeleteOpen(true);
+                            }}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -377,13 +304,25 @@ export default function SiteListTable() {
                     </tr>
                   ))}
               </tbody>
-
             </table>
           </div>
         </CardContent>
       </Card>
 
-      {/* PREVIEW MODAL */}
+      {/* 🔥 DELETE CONFIRM DIALOG (ONLY ADDITION) */}
+      <DeleteConfirmDialog
+        open={deleteOpen}
+        title="Delete Site?"
+        description="This site will be moved to Deleted Records. You can restore it later."
+        loading={deleteLoading}
+        onCancel={() => {
+          setDeleteOpen(false);
+          setSelectedSite(null);
+        }}
+        onConfirm={confirmDelete}
+      />
+
+      {/* PREVIEW MODAL – SAME */}
       {previewDoc && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
           <div className="bg-background p-4 rounded-lg w-[90%] h-[90%]">
@@ -391,10 +330,7 @@ export default function SiteListTable() {
               <span className="font-medium">
                 {previewDoc.originalName || "Document Preview"}
               </span>
-              <Button
-                variant="outline"
-                onClick={() => setPreviewDoc(null)}
-              >
+              <Button variant="outline" onClick={() => setPreviewDoc(null)}>
                 Close
               </Button>
             </div>

@@ -7,48 +7,76 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// *
-///  * ================= DEPARTMENT =================
-///  * ✔ Master table
-///  * ✔ Will be seeded (WRD, PHED, JJM, CGMSC)
-///  * ================================================
+////////////////////////////////////////////////
+/// COMMON SOFT DELETE RULE (MENTAL MODEL)
+/// ----------------------------------------
+/// isDeleted = false  → Active data
+/// isDeleted = true   → Deleted Records (Recoverable)
+/// deletedAt != null  → Delete timestamp
+////////////////////////////////////////////////
+
+
+////////////////////////////////////////////////
+/// ================= DEPARTMENT =================
+/// ✔ Master table
+/// ✔ Seeded data (WRD, PHED, JJM, CGMSC)
+/// ✔ SOFT DELETE ENABLED
+////////////////////////////////////////////////
 model Department {
   id        String   @id @default(cuid())
   name      String   @unique
+
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   sites     Site[]
+
+  @@index([isDeleted])
 }
 
-/// *
-///  * ================= SITE =================
+
+////////////////////////////////////////////////
+/// ================= SITE =================
+/// ✔ Core entity
+/// ✔ Linked with Department
+/// ✔ SOFT DELETE ENABLED
+////////////////////////////////////////////////
 model Site {
   id           String        @id @default(cuid())
   siteName     String
   tenderNo     String?
   sdAmount     Decimal?      @db.Decimal(18, 2)
-  departmentId String?
-  expenses     SiteExpense[] // ✅ ADD THIS
 
-  isDeleted  Boolean        @default(false)
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-  department Department?    @relation(fields: [departmentId], references: [id])
-  documents  SiteDocument[]
-  estimate   SiteEstimate?
+  departmentId String?
+  department   Department?  @relation(fields: [departmentId], references: [id])
+
+  expenses     SiteExpense[]
+  documents    SiteDocument[]
+  estimate     SiteEstimate?
+
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([departmentId])
   @@index([isDeleted])
 }
 
-/// *
-///  * ================= SITE ESTIMATE =================
-///  * ✔ One-to-one with Site
-///  * ✔ Cascades on Site delete
-///  * ================================================
+
+////////////////////////////////////////////////
+/// ================= SITE ESTIMATE =================
+/// ✔ One-to-one with Site
+/// ✔ Cascades on HARD delete only
+////////////////////////////////////////////////
 model SiteEstimate {
   id              String   @id @default(cuid())
   siteId          String   @unique
+
   cement          Decimal? @db.Decimal(18, 2)
   metal           Decimal? @db.Decimal(18, 2)
   sand            Decimal? @db.Decimal(18, 2)
@@ -59,21 +87,26 @@ model SiteEstimate {
   dressing        Decimal? @db.Decimal(18, 2)
   waterCompaction Decimal? @db.Decimal(18, 2)
   loading         Decimal? @db.Decimal(18, 2)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  site            Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 }
 
-/// *
-///  * ================= SITE DOCUMENT =================
-///  * ✔ Cloudinary-based storage
-///  * ✔ SD & WORK_ORDER unique per site
-///  * ✔ TENDER multiple allowed
-///  * ================================================
+
+////////////////////////////////////////////////
+/// ================= SITE DOCUMENT =================
+/// ✔ Cloudinary-based storage
+/// ✔ SD & WORK_ORDER unique per site
+/// ✔ TENDER multiple allowed
+/// ✔ FOLLOWS SITE DELETE STATE
+////////////////////////////////////////////////
 model SiteDocument {
   id           String       @id @default(cuid())
   siteId       String
   type         DocumentType
+
   url          String?
   secureUrl    String
   publicId     String
@@ -81,27 +114,27 @@ model SiteDocument {
   bytes        Int?
   format       String?
   originalName String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@unique([siteId, type], map: "uniq_site_single_docs")
   @@index([siteId, type])
 }
 
-/// *
-///  * ================= ENUM =================
-enum DocumentType {
-  SD
-  WORK_ORDER
-  TENDER
-}
 
+////////////////////////////////////////////////
+/// ================= SITE EXPENSE =================
+/// ✔ Linked with Site
+/// ✔ SOFT DELETE ENABLED (VERY IMPORTANT)
+////////////////////////////////////////////////
 model SiteExpense {
   id String @id @default(cuid())
 
   siteId String
-  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site   Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   expenseDate    DateTime
   expenseTitle   String
@@ -109,8 +142,22 @@ model SiteExpense {
   paymentDetails String?
   amount         Decimal  @db.Decimal(18, 2)
 
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([siteId])
+  @@index([isDeleted])
+}
+
+
+////////////////////////////////////////////////
+/// ================= ENUM =================
+////////////////////////////////////////////////
+enum DocumentType {
+  SD
+  WORK_ORDER
+  TENDER
 }

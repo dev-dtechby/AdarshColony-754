@@ -41,7 +41,7 @@ export const createSiteExpense = async (req: Request, res: Response) => {
         expenseTitle: expenseTitle?.trim(),
         summary: expenseSummary?.trim(),
         paymentDetails: paymentDetails?.trim(),
-        amount,
+        amount: Number(amount),
       },
     });
 
@@ -69,6 +69,9 @@ export const createSiteExpense = async (req: Request, res: Response) => {
 export const getAllSiteExpenses = async (_req: Request, res: Response) => {
   try {
     const expenses = await prisma.siteExpense.findMany({
+      where: {
+        isDeleted: false, // ✅ SOFT DELETE SAFE
+      },
       orderBy: { expenseDate: "desc" },
       include: {
         site: {
@@ -113,7 +116,10 @@ export const getExpensesBySite = async (req: Request, res: Response) => {
     }
 
     const expenses = await prisma.siteExpense.findMany({
-      where: { siteId },
+      where: {
+        siteId,
+        isDeleted: false,
+      },
       orderBy: { expenseDate: "desc" },
     });
 
@@ -134,7 +140,59 @@ export const getExpensesBySite = async (req: Request, res: Response) => {
 
 /**
  * =========================================================
- * DELETE SITE EXPENSE
+ * UPDATE SITE EXPENSE (EDIT)
+ * PUT /api/site-exp/:id
+ * =========================================================
+ */
+export const updateSiteExpense = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      siteId,
+      expenseDate,
+      expenseTitle,
+      expenseSummary,
+      paymentDetails,
+      amount,
+    } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Expense ID is required",
+      });
+    }
+
+    const updated = await prisma.siteExpense.update({
+      where: { id },
+      data: {
+        siteId,
+        expenseDate: new Date(expenseDate),
+        expenseTitle: expenseTitle?.trim(),
+        summary: expenseSummary?.trim(),
+        paymentDetails: paymentDetails?.trim(),
+        amount: Number(amount),
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Expense updated successfully",
+      data: updated,
+    });
+  } catch (error) {
+    console.error("❌ Update Site Expense Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Expense update failed",
+    });
+  }
+};
+
+/**
+ * =========================================================
+ * DELETE SITE EXPENSE (SOFT DELETE)
  * DELETE /api/site-exp/:id
  * =========================================================
  */
@@ -149,13 +207,17 @@ export const deleteSiteExpense = async (req: Request, res: Response) => {
       });
     }
 
-    await prisma.siteExpense.delete({
+    await prisma.siteExpense.update({
       where: { id },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+      },
     });
 
     return res.status(200).json({
       success: true,
-      message: "Site expense deleted successfully",
+      message: "Site expense moved to deleted records",
     });
   } catch (error) {
     console.error("❌ Delete Site Expense Error:", error);

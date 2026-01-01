@@ -1,23 +1,35 @@
 import { Router } from "express";
 import {
   getDepartments,
+  getDeletedDepartments,
   createDepartment,
   deleteDepartment,
+  restoreDepartment,
+  hardDeleteDepartment,
 } from "./department.controller";
 
 const router = Router();
 
 /* ================================
-   ROUTES
+   DEPARTMENT ROUTES (SOFT DELETE)
 ================================ */
 
-// GET ALL
+// 🔹 GET ALL ACTIVE DEPARTMENTS
 router.get("/", getDepartments);
 
-// CREATE
+// 🔹 GET DELETED DEPARTMENTS (RECYCLE BIN)
+router.get("/deleted", getDeletedDepartments);
+
+// 🔹 CREATE
 router.post("/", createDepartment);
 
-// DELETE
+// 🔹 SOFT DELETE (DEFAULT DELETE)
 router.delete("/:id", deleteDepartment);
+
+// 🔹 RESTORE DELETED DEPARTMENT
+router.patch("/:id/restore", restoreDepartment);
+
+// 🔹 HARD DELETE (PERMANENT – ADMIN USE)
+router.delete("/:id/hard", hardDeleteDepartment);
 
 export default router;

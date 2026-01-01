@@ -4,6 +4,7 @@ import {
   getAllSiteExpenses,
   getExpensesBySite,
   deleteSiteExpense,
+  updateSiteExpense,
 } from "./site-exp.controller";
 
 const router = Router();
@@ -34,8 +35,14 @@ router.get("/", getAllSiteExpenses);
 router.get("/site/:siteId", getExpensesBySite);
 
 /**
+ * @route   PUT /api/site-exp/:id
+ * @desc    Update a site expense (EDIT)
+ */
+router.put("/:id", updateSiteExpense);
+
+/**
  * @route   DELETE /api/site-exp/:id
- * @desc    Delete a site expense
+ * @desc    Soft delete a site expense
  */
 router.delete("/:id", deleteSiteExpense);
 

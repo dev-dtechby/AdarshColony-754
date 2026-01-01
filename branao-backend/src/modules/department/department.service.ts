@@ -1,11 +1,28 @@
 import prisma from "../../lib/prisma";
 
 /* ================================
-   GET ALL DEPARTMENTS
+   GET ALL ACTIVE DEPARTMENTS
 ================================ */
 export const getAllDepartments = async () => {
   return prisma.department.findMany({
+    where: {
+      isDeleted: false,
+    },
     orderBy: { name: "asc" },
+  });
+};
+
+/* ================================
+   GET ALL DELETED DEPARTMENTS
+================================ */
+export const getDeletedDepartments = async () => {
+  return prisma.department.findMany({
+    where: {
+      isDeleted: true,
+    },
+    orderBy: {
+      deletedAt: "desc",
+    },
   });
 };
 
@@ -17,6 +34,18 @@ export const createDepartment = async (name: string) => {
     throw new Error("Department name is required");
   }
 
+  // duplicate check (active only)
+  const existing = await prisma.department.findFirst({
+    where: {
+      name: name.trim(),
+      isDeleted: false,
+    },
+  });
+
+  if (existing) {
+    throw new Error("Department already exists");
+  }
+
   return prisma.department.create({
     data: {
       name: name.trim(),
@@ -25,9 +54,37 @@ export const createDepartment = async (name: string) => {
 };
 
 /* ================================
-   DELETE DEPARTMENT
+   SOFT DELETE DEPARTMENT
+   (DEFAULT DELETE)
 ================================ */
-export const deleteDepartment = async (id: string) => {
+export const softDeleteDepartment = async (id: string) => {
+  return prisma.department.update({
+    where: { id },
+    data: {
+      isDeleted: true,
+      deletedAt: new Date(),
+    },
+  });
+};
+
+/* ================================
+   RESTORE DEPARTMENT
+================================ */
+export const restoreDepartment = async (id: string) => {
+  return prisma.department.update({
+    where: { id },
+    data: {
+      isDeleted: false,
+      deletedAt: null,
+    },
+  });
+};
+
+/* ================================
+   HARD DELETE DEPARTMENT
+   (PERMANENT – ADMIN ONLY)
+================================ */
+export const hardDeleteDepartment = async (id: string) => {
   return prisma.department.delete({
     where: { id },
   });
