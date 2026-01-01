@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardHeader,
@@ -16,17 +17,26 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
-import { CalendarIcon, Upload } from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
+/* ================= CONFIG ================= */
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
-export default function VoucherForm() {
+/* ================= PROPS ================= */
+interface Props {
+  voucherId: string;
+}
+
+/* ================= COMPONENT ================= */
+export default function EditVoucher({ voucherId }: Props) {
+  const router = useRouter();
   const { toast } = useToast();
 
-  const [date, setDate] = useState<Date | undefined>(new Date());
+  const [date, setDate] = useState<Date | undefined>();
   const [sites, setSites] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [form, setForm] = useState<any>({
     siteId: "",
@@ -52,12 +62,51 @@ export default function VoucherForm() {
     chequeAmt: "",
   });
 
-  /* ================= FETCH SITES (WITH DEPARTMENT) ================= */
+  /* ================= LOAD SITES ================= */
   useEffect(() => {
     fetch(`${BASE_URL}/api/sites`)
       .then((r) => r.json())
       .then((d) => setSites(d.data || []));
   }, []);
+
+  /* ================= LOAD VOUCHER ================= */
+  useEffect(() => {
+    if (!voucherId || sites.length === 0) return;
+
+    fetch(`${BASE_URL}/api/vouchers/${voucherId}`)
+      .then((r) => r.json())
+      .then((res) => {
+        const v = res.data;
+        const site = sites.find((s) => s.id === v.siteId);
+
+        setDate(new Date(v.voucherDate));
+        setForm({
+          siteId: v.siteId,
+          departmentId: site?.department?.id || "",
+          departmentName: site?.department?.name || "",
+
+          grossAmt: v.grossAmt ?? "",
+          withheld: v.withheld ?? "",
+          incomeTax: v.incomeTax ?? "",
+          revenue: v.revenue ?? "",
+          lwf: v.lwf ?? "",
+          royalty: v.royalty ?? "",
+          miscDeduction: v.miscDeduction ?? "",
+          karmkarTax: v.karmkarTax ?? "",
+          securedDeposit: v.securedDeposit ?? "",
+          tdsOnGst: v.tdsOnGst ?? "",
+          tds: v.tds ?? "",
+          performanceGuarantee: v.performanceGuarantee ?? "",
+          gst: v.gst ?? "",
+          improperFinishing: v.improperFinishing ?? "",
+          otherDeduction: v.otherDeduction ?? "",
+          deductionAmt: v.deductionAmt ?? "",
+          chequeAmt: v.chequeAmt ?? "",
+        });
+
+        setLoading(false);
+      });
+  }, [voucherId, sites]);
 
   /* ================= HANDLERS ================= */
   const handleChange = (key: string, value: any) => {
@@ -65,54 +114,27 @@ export default function VoucherForm() {
   };
 
   const handleSiteChange = (siteId: string) => {
-    const selectedSite = sites.find((s) => s.id === siteId);
+    const site = sites.find((s) => s.id === siteId);
 
     setForm((p: any) => ({
       ...p,
       siteId,
-      departmentId: selectedSite?.department?.id || "",
-      departmentName: selectedSite?.department?.name || "",
+      departmentId: site?.department?.id || "",
+      departmentName: site?.department?.name || "",
     }));
   };
 
-  const resetForm = () => {
-    setDate(new Date());
-    setForm({
-      siteId: "",
-      departmentId: "",
-      departmentName: "",
-
-      grossAmt: "",
-      withheld: "",
-      incomeTax: "",
-      revenue: "",
-      lwf: "",
-      royalty: "",
-      miscDeduction: "",
-      karmkarTax: "",
-      securedDeposit: "",
-      tdsOnGst: "",
-      tds: "",
-      performanceGuarantee: "",
-      gst: "",
-      improperFinishing: "",
-      otherDeduction: "",
-      deductionAmt: "",
-      chequeAmt: "",
-    });
-  };
-
-  const handleSave = async () => {
-    if (!form.siteId || !form.departmentId || !form.chequeAmt) {
+  const handleUpdate = async () => {
+    if (!form.siteId || !form.chequeAmt) {
       toast({
         title: "Validation Error",
-        description: "Site and Cheque Amt are required",
+        description: "Site and Cheque Amount are required",
       });
       return;
     }
 
-    const res = await fetch(`${BASE_URL}/api/vouchers`, {
-      method: "POST",
+    const res = await fetch(`${BASE_URL}/api/vouchers/${voucherId}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         voucherDate: date,
@@ -120,29 +142,44 @@ export default function VoucherForm() {
       }),
     });
 
-    if (res.ok) {
+    if (!res.ok) {
       toast({
-        title: "Success",
-        description: "Voucher saved successfully",
+        title: "Error",
+        description: "Failed to update voucher",
       });
-      resetForm();
+      return;
     }
+
+    toast({
+      title: "Updated",
+      description: "Voucher updated successfully",
+    });
+
+    router.back(); // ✅ GO BACK TO LIST
   };
 
+  /* ================= LOADING ================= */
+  if (loading) {
+    return (
+      <div className="p-6 text-muted-foreground">
+        Loading voucher…
+      </div>
+    );
+  }
+
+  /* ================= UI ================= */
   return (
     <Card className="p-6 shadow-sm border rounded-xl bg-card">
       <CardHeader>
-        <CardTitle className="text-xl font-semibold">
-          Voucher Entry Form
-        </CardTitle>
+        <CardTitle>Edit Voucher</CardTitle>
       </CardHeader>
 
       <CardContent className="space-y-10">
 
-        {/* ================= TOP ROW ================= */}
+        {/* TOP */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
-          {/* Voucher Date */}
+          {/* Date */}
           <div className="space-y-1">
             <Label>Voucher Date</Label>
             <Popover>
@@ -153,7 +190,11 @@ export default function VoucherForm() {
                 </div>
               </PopoverTrigger>
               <PopoverContent className="p-0">
-                <Calendar mode="single" selected={date} onSelect={setDate} />
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={setDate}
+                />
               </PopoverContent>
             </Popover>
           </div>
@@ -175,19 +216,18 @@ export default function VoucherForm() {
             </select>
           </div>
 
-          {/* Department (AUTO / READ ONLY) */}
+          {/* Department */}
           <div className="space-y-1">
             <Label>Department</Label>
             <Input
-              value={form.departmentName}
-              placeholder="Department auto-selected"
               readOnly
+              value={form.departmentName}
               className="bg-muted cursor-not-allowed"
             />
           </div>
         </div>
 
-        {/* ================= FIELDS GRID ================= */}
+        {/* AMOUNT GRID */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[
             ["Gross Amt", "grossAmt"],
@@ -213,28 +253,19 @@ export default function VoucherForm() {
               <Input
                 type="number"
                 value={form[key]}
-                onChange={(e) => handleChange(key, e.target.value)}
-                placeholder={`Enter ${label}`}
+                onChange={(e) =>
+                  handleChange(key, e.target.value)
+                }
               />
             </div>
           ))}
         </div>
 
-        {/* ================= UPLOAD ================= */}
-        <div className="space-y-1">
-          <Label>Upload Voucher</Label>
-          <Button variant="outline" className="w-full flex gap-2 justify-center">
-            <Upload className="h-4 w-4" /> Upload File
-          </Button>
-        </div>
-
-        {/* ================= ACTION BUTTONS ================= */}
-        <div className="flex flex-wrap gap-4 pt-6">
-          <Button className="px-10" onClick={handleSave}>
-            Save
-          </Button>
-          <Button variant="outline" className="px-10" onClick={resetForm}>
-            Reset
+        {/* ACTION */}
+        <div className="flex gap-4 pt-6">
+          <Button onClick={handleUpdate}>Update</Button>
+          <Button variant="outline" onClick={() => router.back()}>
+            Cancel
           </Button>
         </div>
 

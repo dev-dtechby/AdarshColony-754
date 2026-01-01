@@ -20,7 +20,12 @@ import {
   FileText,
 } from "lucide-react";
 
-import { exportToExcel, exportToPDF } from "@/lib/exportUtils";
+
+import {
+  exportSiteListToExcel,
+  exportSiteListToPDF,
+} from "./siteExportUtils";
+
 import DeleteConfirmDialog from "@/components/common/DeleteConfirmDialog";
 
 /* ================= TYPES ================= */
@@ -173,7 +178,7 @@ export default function SiteListTable() {
 
               <Button
                 variant="outline"
-                onClick={() => exportToExcel(exportData, "All_Sites")}
+                onClick={() => exportSiteListToExcel(exportData, "All_Sites")}
               >
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Excel
@@ -181,7 +186,7 @@ export default function SiteListTable() {
 
               <Button
                 variant="outline"
-                onClick={() => exportToPDF(exportData, "All_Sites")}
+                onClick={() => exportSiteListToPDF(exportData, "All_Sites")}
               >
                 <FileText className="h-4 w-4 mr-2" />
                 PDF

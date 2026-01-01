@@ -16,61 +16,65 @@ datasource db {
 /// deletedBy          → User/Admin ID
 ////////////////////////////////////////////////
 
-
 ////////////////////////////////////////////////
 /// ================= DEPARTMENT =================
 ////////////////////////////////////////////////
 model Department {
-  id        String   @id @default(cuid())
-  name      String   @unique
+  id   String @id @default(cuid())
+  name String @unique
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
   deletedBy String?
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  sites     Site[]
+  sites    Site[]
+  vouchers Voucher[]
 
   @@index([isDeleted])
 }
-
 
 ////////////////////////////////////////////////
 /// ================= SITE =================
 ////////////////////////////////////////////////
 model Site {
-  id           String   @id @default(cuid())
-  siteName     String
-  tenderNo     String?
-  sdAmount     Decimal? @db.Decimal(18, 2)
+  id       String   @id @default(cuid())
+  siteName String
+  tenderNo String?
+  sdAmount Decimal? @db.Decimal(18, 2)
+
+  // 🔹 PROFIT PAGE STATUS
+  status SiteStatus @default(NOT_STARTED)
 
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
 
-  expenses     SiteExpense[]
-  documents    SiteDocument[]
-  estimate     SiteEstimate?
+  expenses  SiteExpense[]
+  receipts  SiteReceipt[] // 🔥 Amt Received
+  documents SiteDocument[]
+  estimate  SiteEstimate?
+  vouchers  Voucher[]
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
   deletedBy String?
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([departmentId])
+  @@index([status])
   @@index([isDeleted])
 }
-
 
 ////////////////////////////////////////////////
 /// ================= SITE ESTIMATE =================
 ////////////////////////////////////////////////
 model SiteEstimate {
-  id              String   @id @default(cuid())
-  siteId          String   @unique
+  id     String @id @default(cuid())
+  siteId String @unique
 
   cement          Decimal? @db.Decimal(18, 2)
   metal           Decimal? @db.Decimal(18, 2)
@@ -89,14 +93,13 @@ model SiteEstimate {
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
 }
 
-
 ////////////////////////////////////////////////
 /// ================= SITE DOCUMENT =================
 ////////////////////////////////////////////////
 model SiteDocument {
-  id           String       @id @default(cuid())
-  siteId       String
-  type         DocumentType
+  id     String       @id @default(cuid())
+  siteId String
+  type   DocumentType
 
   url          String?
   secureUrl    String
@@ -115,7 +118,6 @@ model SiteDocument {
   @@index([siteId, type])
 }
 
-
 ////////////////////////////////////////////////
 /// ================= SITE EXPENSE =================
 ////////////////////////////////////////////////
@@ -123,7 +125,7 @@ model SiteExpense {
   id String @id @default(cuid())
 
   siteId String
-  site   Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   expenseDate    DateTime
   expenseTitle   String
@@ -139,39 +141,125 @@ model SiteExpense {
   updatedAt DateTime @updatedAt
 
   @@index([siteId])
+  @@index([expenseDate])
   @@index([isDeleted])
 }
 
+////////////////////////////////////////////////
+/// ================= SITE RECEIPT =================
+/// 🔥 AMT RECEIVED (PROFIT MODULE)
+////////////////////////////////////////////////
+model SiteReceipt {
+  id String @id @default(cuid())
+
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  receiptDate  DateTime
+  referenceNo  String?
+  receivedFrom String?
+  paymentMode  String?
+  amount       Decimal  @db.Decimal(18, 2)
+  remarks      String?
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
+  @@index([receiptDate])
+  @@index([isDeleted])
+}
 
 ////////////////////////////////////////////////
 /// ================= AUDIT LOG (GLOBAL) =================
 ////////////////////////////////////////////////
 model AuditLog {
-  id        String   @id @default(cuid())
+  id String @id @default(cuid())
 
   userId   String?
-  module   String   // Site | Expense | Department | etc.
+  module   String // Site | Expense | Department | Receipt | etc.
   recordId String
-  action   String   // CREATE | UPDATE | DELETE | RESTORE | HARD_DELETE
+  action   AuditAction
 
-  oldData  Json?
-  newData  Json?
+  oldData Json?
+  newData Json?
 
-  ip       String?
+  ip        String?
   userAgent String?
 
   createdAt DateTime @default(now())
 
   @@index([module])
   @@index([recordId])
+  @@index([action])
 }
 
-
 ////////////////////////////////////////////////
-/// ================= ENUM =================
+/// ================= ENUMS =================
 ////////////////////////////////////////////////
 enum DocumentType {
   SD
   WORK_ORDER
   TENDER
+}
+
+enum SiteStatus {
+  NOT_STARTED
+  ONGOING
+  COMPLETED
+  ON_HOLD
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  HARD_DELETE
+}
+
+////////////////////////////////////////////////
+/// =============== VOUCHER ====================
+////////////////////////////////////////////////
+model Voucher {
+  id String @id @default(cuid())
+
+  voucherDate DateTime
+
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id])
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  grossAmt             Decimal? @db.Decimal(18, 2)
+  withheld             Decimal? @db.Decimal(18, 2)
+  incomeTax            Decimal? @db.Decimal(18, 2)
+  revenue              Decimal? @db.Decimal(18, 2)
+  lwf                  Decimal? @db.Decimal(18, 2)
+  royalty              Decimal? @db.Decimal(18, 2)
+  miscDeduction        Decimal? @db.Decimal(18, 2)
+  karmkarTax           Decimal? @db.Decimal(18, 2)
+  securedDeposit       Decimal? @db.Decimal(18, 2)
+  tdsOnGst             Decimal? @db.Decimal(18, 2)
+  tds                  Decimal? @db.Decimal(18, 2)
+  performanceGuarantee Decimal? @db.Decimal(18, 2)
+  gst                  Decimal? @db.Decimal(18, 2)
+  improperFinishing    Decimal? @db.Decimal(18, 2)
+  otherDeduction       Decimal? @db.Decimal(18, 2)
+  deductionAmt         Decimal? @db.Decimal(18, 2)
+
+  chequeAmt Decimal @db.Decimal(18, 2) // 🔥 ACTUAL RECEIVED AMOUNT
+
+  voucherFileUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
+  @@index([departmentId])
 }

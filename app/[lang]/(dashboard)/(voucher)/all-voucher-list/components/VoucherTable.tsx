@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2, Download } from "lucide-react";
 import {
   Select,
   SelectTrigger,
@@ -12,161 +13,238 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
+import { useToast } from "@/components/ui/use-toast";
+
+/* ========= EXPORT UTILS ========= */
+import { exportToExcel, exportToPDF } from "@/lib/exportUtils";
+
+/* ========= DELETE DIALOG ========= */
+import DeleteConfirmDialog from "@/components/common/DeleteConfirmDialog";
+
+/* ================= CONFIG ================= */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
 export default function VoucherTable() {
-  const [search, setSearch] = useState("");
+  const router = useRouter();
+  const { toast } = useToast();
 
-  // 🔹 Dummy Data (Replace with API later)
-  const data = [
-    {
-      voucherDate: "05-12-2025",
-      site: "New Raipur Site",
-      department: "Civil",
-      onAccount: "Material Supply",
-      grossAmt: "₹ 1,20,000",
-      withheld: "₹ 2,000",
-      incomeTax: "₹ 8,000",
-      revenue: "₹ 500",
-      lwf: "₹ 200",
-      royalty: "₹ 1,500",
-      misc: "₹ 400",
-      karmkarTax: "₹ 150",
-      securedDeposit: "₹ 5,000",
-      tdsOnGST: "₹ 700",
-      tds: "₹ 2,400",
-      performanceGuarantee: "₹ 3,000",
-      gst: "₹ 18,000",
-      improperFinishing: "₹ 600",
-      otherDeduction: "₹ 1,200",
-      deductionAmt: "₹ 23,250",
-      chequeAmt: "₹ 96,750",
-      voucher: "VCH/2025/001",
-    },
-  ];
+  const [search, setSearch] = useState("");
+  const [siteFilter, setSiteFilter] = useState("");
+  const [sites, setSites] = useState<any[]>([]);
+  const [vouchers, setVouchers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  /* DELETE STATES */
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  /* ================= FETCH ================= */
+  const loadData = async () => {
+    try {
+      const [siteRes, voucherRes] = await Promise.all([
+        fetch(`${BASE_URL}/api/sites`).then((r) => r.json()),
+        fetch(`${BASE_URL}/api/vouchers`).then((r) => r.json()),
+      ]);
+
+      setSites(siteRes.data || []);
+      setVouchers(voucherRes.data || []);
+    } catch (err) {
+      console.error("VOUCHER LOAD ERROR", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  /* ================= FILTER ================= */
+  const filteredData = useMemo(() => {
+    return vouchers.filter((v) => {
+      const t = search.toLowerCase();
+
+      const matchesSearch =
+        v.site?.siteName?.toLowerCase().includes(t) ||
+        v.department?.name?.toLowerCase().includes(t) ||
+        String(v.chequeAmt || "").includes(t) ||
+        String(v.grossAmt || "").includes(t);
+
+      const matchesSite = siteFilter ? v.siteId === siteFilter : true;
+
+      return matchesSearch && matchesSite;
+    });
+  }, [search, siteFilter, vouchers]);
+
+  /* ================= DELETE ================= */
+  const handleDelete = async () => {
+    if (!deleteId) return;
+
+    try {
+      setDeleting(true);
+
+      const res = await fetch(
+        `${BASE_URL}/api/vouchers/${deleteId}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) throw new Error("Delete failed");
+
+      toast({
+        title: "Deleted",
+        description: "Voucher moved to deleted records",
+      });
+
+      setDeleteId(null);
+      loadData();
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to delete voucher",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  /* ================= EXPORT ================= */
+  const handleExportExcel = () =>
+    exportToExcel(filteredData, "Voucher_List");
+
+  const handleExportPDF = () =>
+    exportToPDF(filteredData, "Voucher_List");
+
+  if (loading) {
+    return <div className="p-6">Loading vouchers…</div>;
+  }
 
   return (
-    <Card className="p-6 border rounded-md mt-4">
-      {/* <h2 className="text-xl font-semibold text-default-900 mb-4">
-        All Voucher List
-      </h2> */}
+    <>
+      <Card className="p-6 border rounded-md mt-4">
 
-      {/* 🔍 Filter Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Input
-          placeholder="Search..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full"
-        />
+        {/* FILTER BAR */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <Input
+            placeholder="Search anything…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
 
-        <Select>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select Site" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="raipur">New Raipur Site</SelectItem>
-            <SelectItem value="kawardha">Kawardha Road Site</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Department" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="civil">Civil</SelectItem>
-            <SelectItem value="mechanical">Mechanical</SelectItem>
-            <SelectItem value="electrical">Electrical</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* TABLE WRAPPER (Horizontal + Vertical Scroll) */}
-      <div className="w-full overflow-x-auto overflow-y-auto max-h-[65vh] border rounded-md">
-        <table className="min-w-[1800px] border-collapse text-sm">
-          <thead className="sticky top-0 bg-default-100 z-10">
-            <tr className="text-default-700">
-              {[
-                "Voucher Date",
-                "Site",
-                "Department",
-                "On Account",
-                "Gross Amt",
-                "Withheld",
-                "Income Tax",
-                "Revenue",
-                "LWF",
-                "Royalty",
-                "Misc. Deduction",
-                "Karmkar Tax",
-                "Secured Deposit",
-                "TDS on GST",
-                "TDS",
-                "Performance Guarantee",
-                "GST",
-                "Improper Finishing",
-                "Other Deduction",
-                "Deduction Amt",
-                "Cheque Amt",
-                "Voucher",
-                "Action",
-              ].map((head, i) => (
-                <th
-                  key={i}
-                  className="px-4 py-3 text-left whitespace-nowrap border-b"
-                >
-                  {head}
-                </th>
+          <Select value={siteFilter} onValueChange={setSiteFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="Filter by Site" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Sites</SelectItem>
+              {sites.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.siteName}
+                </SelectItem>
               ))}
-            </tr>
-          </thead>
+            </SelectContent>
+          </Select>
 
-          <tbody>
-            {data.map((item, index) => (
-              <tr
-                key={index}
-                className="border-b hover:bg-default-50 transition"
-              >
-                <td className="px-4 py-3">{item.voucherDate}</td>
-                <td className="px-4 py-3">{item.site}</td>
-                <td className="px-4 py-3">{item.department}</td>
-                <td className="px-4 py-3">{item.onAccount}</td>
-                <td className="px-4 py-3 font-semibold">{item.grossAmt}</td>
-                <td className="px-4 py-3">{item.withheld}</td>
-                <td className="px-4 py-3">{item.incomeTax}</td>
-                <td className="px-4 py-3">{item.revenue}</td>
-                <td className="px-4 py-3">{item.lwf}</td>
-                <td className="px-4 py-3">{item.royalty}</td>
-                <td className="px-4 py-3">{item.misc}</td>
-                <td className="px-4 py-3">{item.karmkarTax}</td>
-                <td className="px-4 py-3">{item.securedDeposit}</td>
-                <td className="px-4 py-3">{item.tdsOnGST}</td>
-                <td className="px-4 py-3">{item.tds}</td>
-                <td className="px-4 py-3">{item.performanceGuarantee}</td>
-                <td className="px-4 py-3">{item.gst}</td>
-                <td className="px-4 py-3">{item.improperFinishing}</td>
-                <td className="px-4 py-3">{item.otherDeduction}</td>
-                <td className="px-4 py-3 font-semibold text-red-600">
-                  {item.deductionAmt}
-                </td>
-                <td className="px-4 py-3 font-semibold text-green-600">
-                  {item.chequeAmt}
-                </td>
-                <td className="px-4 py-3">{item.voucher}</td>
+          <div className="flex gap-2 md:col-span-2">
+            <Button variant="outline" onClick={handleExportExcel}>
+              <Download className="w-4 h-4 mr-1" /> Excel
+            </Button>
+            <Button variant="outline" onClick={handleExportPDF}>
+              <Download className="w-4 h-4 mr-1" /> PDF
+            </Button>
+          </div>
+        </div>
 
-                {/* ACTION ICONS */}
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <Eye className="w-5 h-5 text-primary cursor-pointer hover:scale-110 transition" />
-                    <Pencil className="w-5 h-5 text-yellow-600 cursor-pointer hover:scale-110 transition" />
-                    <Trash2 className="w-5 h-5 text-red-600 cursor-pointer hover:scale-110 transition" />
-                  </div>
-                </td>
+        {/* TABLE */}
+        <div className="w-full overflow-x-auto max-h-[65vh] border rounded-md">
+          <table className="min-w-[1800px] text-sm border-collapse">
+            <thead className="sticky top-0 bg-default-100 z-10">
+              <tr>
+                {[
+                  "Voucher Date","Site","Department","Gross Amt","Withheld",
+                  "Income Tax","Revenue","LWF","Royalty","Misc",
+                  "Karmkar Tax","Secured Deposit","TDS on GST","TDS",
+                  "Performance Guarantee","GST","Improper Finishing",
+                  "Other Deduction","Deduction Amt","Cheque Amt","Action",
+                ].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left border-b">
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
+            </thead>
+
+            <tbody>
+              {filteredData.map((v) => (
+                <tr key={v.id} className="border-b hover:bg-default-50">
+                  <td className="px-4 py-2">
+                    {new Date(v.voucherDate).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-2">{v.site?.siteName}</td>
+                  <td className="px-4 py-2">{v.department?.name}</td>
+
+                  <td className="px-4 py-2">{v.grossAmt}</td>
+                  <td className="px-4 py-2">{v.withheld}</td>
+                  <td className="px-4 py-2">{v.incomeTax}</td>
+                  <td className="px-4 py-2">{v.revenue}</td>
+                  <td className="px-4 py-2">{v.lwf}</td>
+                  <td className="px-4 py-2">{v.royalty}</td>
+                  <td className="px-4 py-2">{v.miscDeduction}</td>
+                  <td className="px-4 py-2">{v.karmkarTax}</td>
+                  <td className="px-4 py-2">{v.securedDeposit}</td>
+                  <td className="px-4 py-2">{v.tdsOnGst}</td>
+                  <td className="px-4 py-2">{v.tds}</td>
+                  <td className="px-4 py-2">{v.performanceGuarantee}</td>
+                  <td className="px-4 py-2">{v.gst}</td>
+                  <td className="px-4 py-2">{v.improperFinishing}</td>
+                  <td className="px-4 py-2">{v.otherDeduction}</td>
+                  <td className="px-4 py-2 text-red-600 font-semibold">
+                    {v.deductionAmt}
+                  </td>
+                  <td className="px-4 py-2 text-green-600 font-semibold">
+                    {v.chequeAmt}
+                  </td>
+
+                  <td className="px-4 py-2">
+                    <div className="flex gap-3">
+                      <Eye className="w-5 h-5 cursor-pointer" />
+                      <Pencil
+                        className="w-5 h-5 cursor-pointer text-yellow-600"
+                        onClick={() =>
+                          router.push(`edit/${v.id}`)
+                        }
+                      />
+
+                      <Trash2
+                        className="w-5 h-5 text-red-600 cursor-pointer"
+                        onClick={() => setDeleteId(v.id)}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {filteredData.length === 0 && (
+                <tr>
+                  <td colSpan={21} className="text-center py-6 text-muted-foreground">
+                    No vouchers found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* DELETE CONFIRM */}
+      <DeleteConfirmDialog
+        open={!!deleteId}
+        loading={deleting}
+        onCancel={() => setDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Delete Voucher?"
+        description="This voucher will be soft-deleted and can be restored later."
+      />
+    </>
   );
 }

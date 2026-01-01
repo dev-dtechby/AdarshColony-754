@@ -7,6 +7,8 @@ import siteRoutes from "./modules/site/site.routes";
 import departmentRoutes from "./modules/department/department.routes";
 import siteExpRoutes from "./modules/site-exp/site-exp.routes";
 import auditLogRoutes from "./modules/audit-log/audit-log.routes"; // ✅ ADD THIS
+import siteProfitRoutes from "./modules/site-profit/site-profit.routes";
+import voucherRoutes from "./modules/voucher/voucher.routes";
 
 const app = express();
 
@@ -58,7 +60,8 @@ app.use("/api/sites", siteRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/site-exp", siteExpRoutes);
 app.use("/api/audit-log", auditLogRoutes); // ✅ THIS FIXES EVERYTHING
-
+app.use("/api/site-profit", siteProfitRoutes);
+app.use("/api/vouchers", voucherRoutes);
 // ====================
 // 404 Handler
 // ====================

@@ -1,0 +1,139 @@
+STEP 1: Page Folder Create karo
+
+      📁 Path rule
+
+      app/[lang]/(dashboard)/(module)/<page-name>/page.tsx
+
+
+STEP 2: Page Component (page.tsx)
+
+      Rules
+
+      use client lagana hai (agar hooks use ho rahe hain)
+
+      Sirf page-level logic
+
+      "use client";
+
+      export default function AuditLogPage() {
+        return <div>Audit Log</div>;
+      }
+
+STEP 3: Components Folder (Optional but Recommended)
+
+📁
+
+      app/[lang]/(dashboard)/(module)/<page-name>/components/
+
+STEP 4: API Call Convention
+      const BASE_URL =
+        process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+      const API_URL = `${BASE_URL}/api/audit-log`;
+
+STEP 5: Sidebar Menu Entry
+
+      📁 config/menus.ts
+
+      {
+        title: "Settings",
+        icon: Settings,
+        child: [
+          {
+            title: "Audit Log",
+            href: "/audit-log",
+            icon: ShieldCheck,
+            description: "Track all system actions",
+          },
+        ],
+      }
+
+
+
+PART B — BACKEND (EXPRESS + PRISMA)
+      ✅ STEP 6: Module Folder Create
+
+      📁
+
+      branao-backend/src/modules/<module-name>/
+
+
+      Example:
+
+      site-exp/
+      ├─ site-exp.routes.ts
+      ├─ site-exp.controller.ts
+      └─ site-exp.service.ts
+
+
+STEP 7: Routes File (*.routes.ts)
+      import { Router } from "express";
+      import * as controller from "./site-exp.controller";
+
+      const router = Router();
+
+      router.get("/", controller.getAll);
+      router.post("/", controller.create);
+      router.put("/:id", controller.update);
+      router.delete("/:id", controller.softDelete);
+
+      export default router;
+
+
+STEP 8: Controller File (*.controller.ts)
+
+      Controller = HTTP + Validation only
+
+      import { Request, Response } from "express";
+      import * as service from "./site-exp.service";
+
+      export const getAll = async (_req: Request, res: Response) => {
+        const data = await service.getAll();
+        res.json({ success: true, data });
+      };
+
+
+      ❌ Prisma direct use mat karo (controller me)
+
+
+STEP 9: Service File (*.service.ts)
+
+      Service = Prisma + Business Logic
+
+      import prisma from "../../lib/prisma";
+
+      export const getAll = () => {
+        return prisma.siteExpense.findMany({
+          where: { isDeleted: false },
+        });
+      };
+
+✅ STEP 10: Prisma Schema Update (If Needed)
+      model SiteExpense {
+        id String @id @default(cuid())
+        isDeleted Boolean @default(false)
+        deletedAt DateTime?
+      }
+
+✅ STEP 11: Migration Run
+
+      📁 branao-backend
+
+      npx prisma migrate dev -n add_site_expense_soft_delete
+
+✅ STEP 12: Route Register in app.ts
+
+      📁 src/app.ts
+
+      import siteExpRoutes from "./modules/site-exp/site-exp.routes";
+
+      app.use("/api/site-exp", siteExpRoutes);
+
+
+      ⚠️ Ye step bhoolna = API kaam nahi karega
+
+
+Finaly GitHub ke liye :
+git add .  
+git commit -m "feat: to Estimate Lables"
+git push origin main

@@ -7,7 +7,18 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { Eye, Download } from "lucide-react";
+import { Plus, Eye, Download } from "lucide-react";
+
+/* ========= SHADCN ========= */
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+/* ========= COMPONENT ========= */
+import DepartmentMaster from "../../department/components/DepartmentMaster";
 
 /* ================= TYPES ================= */
 interface Department {
@@ -35,7 +46,7 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
   const [departmentId, setDepartmentId] = useState("");
   const [sdAmount, setSdAmount] = useState("");
 
-  /* ================= FILES ================= */
+  /* ================= FILE STATES ================= */
   const [sdFile, setSdFile] = useState<File | null>(null);
   const [workOrderFile, setWorkOrderFile] = useState<File | null>(null);
   const [tenderDocs, setTenderDocs] = useState<File[]>([]);
@@ -51,11 +62,12 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
 
   /* ================= DEPARTMENT ================= */
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [openDeptDialog, setOpenDeptDialog] = useState(false);
 
   /* ================= UX ================= */
   const [loading, setLoading] = useState(false);
 
-  /* ================= API (SAFE) ================= */
+  /* ================= API ================= */
   const BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
@@ -66,8 +78,6 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
   const loadDepartments = async () => {
     try {
       const res = await fetch(DEPT_API);
-      if (!res.ok) throw new Error("Department fetch failed");
-
       const json = await res.json();
       setDepartments(json?.data ?? []);
     } catch {
@@ -80,22 +90,15 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
     try {
       const res = await fetch(`${SITE_API}/${siteId}`);
       const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(json?.message || "Fetch failed");
-      }
+      if (!res.ok) throw new Error();
 
       const data = json.data ?? json;
 
-      // BASIC
       setSiteName(data.siteName || "");
       setTenderNo(data.tenderNo || "");
       setSdAmount(data.sdAmount ? String(data.sdAmount) : "");
-
-      // DEPARTMENT
       setDepartmentId(data.department?.id || "");
 
-      // ESTIMATES
       if (data.estimates) {
         setEstimate({
           Cement: String(data.estimates.cement ?? ""),
@@ -109,24 +112,17 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
           "Water & Compaction": String(data.estimates.waterCompaction ?? ""),
           Loading: String(data.estimates.loading ?? ""),
         });
-      } else {
-        setEstimate({});
       }
 
-      /* DOCUMENTS (handle both backend shapes) */
       const docs: SiteDocument[] = [];
-
       if (data.sdFile) docs.push(data.sdFile);
       if (data.workOrderFile) docs.push(data.workOrderFile);
       if (data.tenderDocs?.length) docs.push(...data.tenderDocs);
-
       if (!docs.length && Array.isArray(data.documents)) {
         docs.push(...data.documents);
       }
-
       setExistingDocs(docs);
-    } catch (err) {
-      console.error("EditSite load error:", err);
+    } catch {
       toast({ title: "❌ Failed to load site data" });
     }
   };
@@ -139,9 +135,8 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
   }, [siteId]);
 
   /* ================= HELPERS ================= */
-  const handleEstimateChange = (k: string, v: string) => {
-    setEstimate(prev => ({ ...prev, [k]: v }));
-  };
+  const handleEstimateChange = (k: string, v: string) =>
+    setEstimate((p) => ({ ...p, [k]: v }));
 
   const getDownloadUrl = (url: string) =>
     url.includes("/upload/")
@@ -150,7 +145,6 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
 
   const buildFormData = () => {
     const fd = new FormData();
-
     fd.append("siteName", siteName);
     fd.append("tenderNo", tenderNo);
     fd.append("sdAmount", sdAmount);
@@ -169,14 +163,14 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
 
     if (sdFile) fd.append("sdFile", sdFile);
     if (workOrderFile) fd.append("workOrderFile", workOrderFile);
-    tenderDocs.forEach(f => fd.append("tenderDocs", f));
+    tenderDocs.forEach((f) => fd.append("tenderDocs", f));
 
     return fd;
   };
 
   /* ================= UPDATE ================= */
   const handleUpdate = async () => {
-    if (!siteName) {
+    if (!siteName.trim()) {
       toast({ title: "❌ Site Name is required" });
       return;
     }
@@ -202,142 +196,152 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
 
   /* ================= UI ================= */
   return (
-    <Card className="p-6 space-y-8">
-      <h2 className="text-2xl font-semibold">Edit Site</h2>
+    <>
+      <Card className="p-6 space-y-8">
+        <h2 className="text-2xl font-semibold">Edit Site</h2>
 
-      {/* BASIC */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div>
-          <Label>Site Name</Label>
-          <Input value={siteName} onChange={e => setSiteName(e.target.value)} />
+        {/* BASIC */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div>
+            <Label>Site Name</Label>
+            <Input value={siteName} onChange={(e) => setSiteName(e.target.value)} />
+          </div>
+
+          <div>
+            <Label>Tender No</Label>
+            <Input value={tenderNo} onChange={(e) => setTenderNo(e.target.value)} />
+          </div>
+
+          <div>
+            <Label>Department</Label>
+            <div className="flex gap-2">
+              <select
+                className="w-full border rounded-md px-3 py-2"
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
+              >
+                <option value="">Select</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+
+              <Button
+                variant="outline"
+                size="icon"
+                type="button"
+                onClick={() => setOpenDeptDialog(true)}
+              >
+                <Plus size={16} />
+              </Button>
+            </div>
+          </div>
         </div>
 
-        <div>
-          <Label>Tender No</Label>
-          <Input value={tenderNo} onChange={e => setTenderNo(e.target.value)} />
+        {/* FILES */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div>
+            <Label>SD Amount</Label>
+            <Input value={sdAmount} onChange={(e) => setSdAmount(e.target.value)} />
+          </div>
+
+          <div>
+            <Label>Replace SD</Label>
+            <Input ref={sdFileRef} type="file" onChange={(e) => setSdFile(e.target.files?.[0] || null)} />
+          </div>
+
+          <div>
+            <Label>Replace Work Order</Label>
+            <Input ref={workOrderFileRef} type="file" onChange={(e) => setWorkOrderFile(e.target.files?.[0] || null)} />
+          </div>
         </div>
 
-        <div>
-          <Label>Department</Label>
-          <select
-            className="w-full border rounded-md px-3 py-2"
-            value={departmentId}
-            onChange={e => setDepartmentId(e.target.value)}
-          >
-            <option value="">Select</option>
-            {departments.map(d => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
+        {/* EXISTING DOCS */}
+        {existingDocs.length > 0 && (
+          <div className="space-y-2">
+            <Label>Existing Documents</Label>
+            {existingDocs.map((doc) => (
+              <div key={doc.id} className="flex items-center gap-3">
+                <span className="text-sm">{doc.originalName || doc.type}</span>
+                <Button size="icon" variant="outline" onClick={() => window.open(doc.secureUrl)}>
+                  <Eye size={16} />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={() => window.open(getDownloadUrl(doc.secureUrl))}
+                >
+                  <Download size={16} />
+                </Button>
+              </div>
             ))}
-          </select>
-        </div>
-      </div>
-
-      {/* FILES */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div>
-          <Label>SD Amount</Label>
-          <Input value={sdAmount} onChange={e => setSdAmount(e.target.value)} />
-        </div>
+          </div>
+        )}
 
         <div>
-          <Label>Replace SD</Label>
+          <Label>Add More Tender Documents</Label>
           <Input
-            ref={sdFileRef}
+            ref={tenderDocsRef}
             type="file"
-            onChange={e => setSdFile(e.target.files?.[0] || null)}
+            multiple
+            onChange={(e) => setTenderDocs(Array.from(e.target.files || []))}
           />
         </div>
 
-        <div>
-          <Label>Replace Work Order</Label>
-          <Input
-            ref={workOrderFileRef}
-            type="file"
-            onChange={e => setWorkOrderFile(e.target.files?.[0] || null)}
-          />
-        </div>
-      </div>
-
-      {/* EXISTING DOCS */}
-      {existingDocs.length > 0 && (
-        <div className="space-y-2">
-          <Label>Existing Documents</Label>
-          {existingDocs.map(doc => (
-            <div key={doc.id} className="flex items-center gap-3">
-              <span className="text-sm">
-                {doc.originalName || doc.type}
-              </span>
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => window.open(doc.secureUrl, "_blank")}
-              >
-                <Eye size={16} />
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() =>
-                  window.open(getDownloadUrl(doc.secureUrl), "_blank")
-                }
-              >
-                <Download size={16} />
-              </Button>
+        {/* ESTIMATE */}
+        <h3 className="text-xl font-semibold">Estimate</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[
+            "Cement",
+            "Metal",
+            "Sand",
+            "Labour",
+            "Royalty",
+            "Over Head",
+            "Lead",
+            "Dressing",
+            "Water & Compaction",
+            "Loading",
+          ].map((item) => (
+            <div key={item} className="space-y-1">
+              <Label className="text-sm font-medium">{item}</Label>
+              <Input
+                value={estimate[item] || ""}
+                onChange={(e) => handleEstimateChange(item, e.target.value)}
+                placeholder={`Enter ${item}`}
+              />
             </div>
           ))}
         </div>
-      )}
 
-      <div>
-        <Label>Add More Tender Documents</Label>
-        <Input
-          ref={tenderDocsRef}
-          type="file"
-          multiple
-          onChange={e => setTenderDocs(Array.from(e.target.files || []))}
-        />
-      </div>
+        {/* ACTION */}
+        <div className="flex justify-center gap-4">
+          <Button onClick={handleUpdate} disabled={loading}>
+            {loading ? "Updating..." : "Update"}
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/en/all-site-list")}>
+            Cancel
+          </Button>
+        </div>
+      </Card>
 
-      {/* ESTIMATE */}
-      <h3 className="text-xl font-semibold">Estimate</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {[
-          "Cement",
-          "Metal",
-          "Sand",
-          "Labour",
-          "Royalty",
-          "Over Head",
-          "Lead",
-          "Dressing",
-          "Water & Compaction",
-          "Loading",
-        ].map(item => (
-          <Input
-            key={item}
-            placeholder={item}
-            value={estimate[item] || ""}
-            onChange={e => handleEstimateChange(item, e.target.value)}
+      {/* ================= DEPARTMENT MASTER DIALOG ================= */}
+      <Dialog open={openDeptDialog} onOpenChange={setOpenDeptDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Department Master</DialogTitle>
+          </DialogHeader>
+
+          <DepartmentMaster
+            onChanged={() => {
+              loadDepartments();
+              setOpenDeptDialog(false);
+            }}
           />
-        ))}
-      </div>
-
-      {/* ACTIONS */}
-      <div className="flex justify-center gap-4">
-        <Button onClick={handleUpdate} disabled={loading}>
-          {loading ? "Updating..." : "Update"}
-        </Button>
-
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.push("/en/all-site-list")}
-        >
-          Cancel
-        </Button>
-      </div>
-    </Card>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

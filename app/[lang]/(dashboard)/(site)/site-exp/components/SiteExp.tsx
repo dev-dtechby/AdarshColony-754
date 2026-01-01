@@ -25,11 +25,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 /* ========= EXPORT ========= */
+
 import {
-  exportToCSV,
-  exportToExcel,
-  exportToPDF,
-} from "@/lib/exportUtils";
+  exportSiteExpenseToExcel,
+  exportSiteExpenseToPDF,
+} from "./siteExpExportUtils";
+
 
 import DeleteConfirmDialog from "@/components/common/DeleteConfirmDialog";
 
@@ -230,13 +231,10 @@ export default function SiteExp() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => exportToCSV(exportData, "site-expenses")}>
-                    CSV
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => exportToExcel(exportData, "site-expenses")}>
+                  <DropdownMenuItem onClick={() => exportSiteExpenseToExcel(exportData, "site-expenses")}>
                     Excel
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => exportToPDF(exportData, "site-expenses")}>
+                  <DropdownMenuItem onClick={() => exportSiteExpenseToPDF(exportData, "site-expenses")}>
                     PDF
                   </DropdownMenuItem>
                 </DropdownMenuContent>
