@@ -91,11 +91,11 @@ export const menusConfig = {
           href: "/site-profit-data",
           icon: ClipBoard,
         },
-        {
-          title: "Site Summary",
-          href: "/site-summary",
-          icon: ClipBoard,
-        },
+        // {
+        //   title: "Site Summary",
+        //   href: "/site-summary",
+        //   icon: ClipBoard,
+        // },
       ],
     },
     {
@@ -1076,11 +1076,11 @@ export const menusConfig = {
             href: "/project",
             icon: ClipBoard,
           },
-          {
-            title: "Site Summary",
-            href: "/site-summary",
-            icon: ClipBoard,
-          },
+          // {
+          //   title: "Site Summary",
+          //   href: "/site-summary",
+          //   icon: ClipBoard,
+          // },
         ],
       },
       {
@@ -2167,11 +2167,11 @@ export const menusConfig = {
             href: "/site-profit-data",
             icon: ClipBoard,
           },
-          {
-            title: "Site Summary",
-            href: "/site-summary",
-            icon: ClipBoard,
-          },
+          // {
+          //   title: "Site Summary",
+          //   href: "/site-summary",
+          //   icon: ClipBoard,
+          // },
         ],
       },
       {

@@ -6,9 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Download, FileText, MoreHorizontal } from "lucide-react";
 
 import {
-  exportToExcel,
-  exportToPDF,
-} from "@/lib/exportUtils";
+  exportSiteProfitToExcel,
+  exportSiteProfitToPDF,
+} from "./siteProfitExportUtils";
 
 /* ================= STATUS OPTIONS ================= */
 const STATUS_OPTIONS = [
@@ -147,7 +147,10 @@ export default function SiteProfitChart() {
               <div
                 className="px-3 py-2 text-sm cursor-pointer hover:bg-default-200"
                 onClick={() => {
-                  exportToExcel(filteredData, "Site-Profit-Report");
+                  exportSiteProfitToExcel(
+                    filteredData,
+                    "Site-Profit-Report"
+                  );
                   setOpenMenu(null);
                 }}
               >
@@ -157,7 +160,10 @@ export default function SiteProfitChart() {
               <div
                 className="px-3 py-2 text-sm cursor-pointer hover:bg-default-200"
                 onClick={() => {
-                  exportToPDF(filteredData, "Site-Profit-Report");
+                  exportSiteProfitToPDF(
+                    filteredData,
+                    "Site-Profit-Report"
+                  );
                   setOpenMenu(null);
                 }}
               >
@@ -165,6 +171,7 @@ export default function SiteProfitChart() {
               </div>
             </div>
           )}
+
         </div>
       </div>
 
