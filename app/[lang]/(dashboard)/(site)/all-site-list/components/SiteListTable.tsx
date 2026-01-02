@@ -150,7 +150,7 @@ export default function SiteListTable() {
     "Site Name": s.siteName,
     "Tender No": s.tenderNo || "",
     Department: s.department?.name || "",
-    "SD Amount": s.sdAmount || "",
+    "EMD Amount": s.sdAmount || "",
     "SD URL": s.sdFile?.secureUrl || "",
     "Work Order URL": s.workOrderFile?.secureUrl || "",
     "Tender Docs URL": s.tenderDocs
@@ -204,7 +204,7 @@ export default function SiteListTable() {
                     "Site Name",
                     "Tender No",
                     "Department",
-                    "SD Amount",
+                    "EMD Amount",
                     "SD",
                     "Work Order",
                     "Tender Docs",

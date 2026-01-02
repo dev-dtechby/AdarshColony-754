@@ -203,7 +203,7 @@ export default function SiteForm() {
         {/* FILES */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>
-            <Label>SD Amount</Label>
+            <Label>EMD Amount</Label>
             <Input value={sdAmount} onChange={(e) => setSdAmount(e.target.value)} />
           </div>
 
