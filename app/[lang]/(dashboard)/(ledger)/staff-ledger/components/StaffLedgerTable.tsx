@@ -1,63 +1,96 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import StaffExpEntryForm from "./StaffExpEntryForm";
 import StaffAmountReceive from "./StaffAmountReceive";
 
+/* ================= TYPES ================= */
+interface Ledger {
+  id: string;
+  name: string;
+  address?: string | null;
+  mobile?: string | null;
+  site?: { siteName: string } | null;
+  ledgerType?: { name: string } | null;
+}
+
+/* ================= API BASE ================= */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+/* ================= COMPONENT ================= */
 export default function StaffLedgerTable() {
   const [search, setSearch] = useState("");
   const [selectedStaff, setSelectedStaff] = useState("");
-  const [openForm, setOpenForm] = useState<"exp" | "received" | null>(null);
+  const [openForm, setOpenForm] =
+    useState<"exp" | "received" | null>(null);
 
-  const staffList = [
-    "Dev Site Exp",
-    "All Site Exp",
-    "Kondagaon Exp",
-    "Rasani Site Exp",
-  ];
+  const [staffLedgers, setStaffLedgers] = useState<Ledger[]>([]);
 
-  const allLedgerData = [
-    {
-      staff: "Dev Site Exp",
-      date: "01-11-24",
-      site: "Dev Site Exp",
-      summary: "Petrol",
-      through: "Kartik",
-      out: 450,
-      in: 0,
-      balance: 0,
-    },
-    {
-      staff: "All Site Exp",
-      date: "27-10-25",
-      site: "All Site Exp",
-      summary: "Chaay",
-      through: "Office",
-      out: 60,
-      in: 450,
-      balance: 260,
-    },
-  ];
+  /* ================= FETCH STAFF / SUPERVISOR LEDGERS ================= */
+  useEffect(() => {
+    fetchStaffLedgers();
+  }, []);
 
-  const filteredData = selectedStaff
-    ? allLedgerData.filter((row) => row.staff === selectedStaff)
-    : [];
+  const fetchStaffLedgers = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/ledgers`, {
+        credentials: "include",
+      });
 
-  const toggleForm = (type: "exp" | "received") => {
-    setOpenForm((prev) => (prev === type ? null : type));
+      const json = await res.json();
+
+      const filtered =
+        json?.data?.filter((l: Ledger) =>
+          l.ledgerType?.name
+            ?.toLowerCase()
+            .includes("staff")
+        ) ?? [];
+
+      setStaffLedgers(filtered);
+    } catch (err) {
+      console.error("Failed to fetch staff ledgers", err);
+      setStaffLedgers([]);
+    }
   };
 
+  /* ================= STAFF LIST ================= */
+  const staffList = useMemo(() => {
+    return staffLedgers
+      .map((l) => l.name)
+      .filter(Boolean);
+  }, [staffLedgers]);
+
+  /* ================= SELECTED STAFF OBJECT ================= */
+  const selectedStaffLedger = useMemo(() => {
+    return staffLedgers.find(
+      (l) => l.name === selectedStaff
+    );
+  }, [selectedStaff, staffLedgers]);
+
+  /* ================= UI ================= */
   return (
     <>
       {/* ================= MAIN LEDGER CARD ================= */}
       <Card className="p-4 md:p-6 shadow-sm border rounded-xl bg-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-2xl font-semibold text-default-900">
+          <CardTitle className="text-2xl font-semibold">
             Staff Ledger
           </CardTitle>
         </CardHeader>
@@ -65,8 +98,7 @@ export default function StaffLedgerTable() {
         <CardContent className="space-y-6">
           {/* -------- Search + Buttons -------- */}
           <div className="flex flex-col md:flex-row gap-4 md:items-center">
-
-            {/* Staff Search Input */}
+            {/* Staff Search */}
             <div className="w-full md:w-1/3">
               <Input
                 placeholder="Search / Select Staff..."
@@ -76,7 +108,6 @@ export default function StaffLedgerTable() {
                   setSelectedStaff(e.target.value);
                 }}
                 list="staff-options"
-                className="h-10"
               />
 
               <datalist id="staff-options">
@@ -86,27 +117,26 @@ export default function StaffLedgerTable() {
               </datalist>
             </div>
 
-            {/* Top Buttons */}
+            {/* Buttons */}
             <div className="flex flex-wrap gap-2 md:ml-auto">
               <Button
-                className="px-4 md:px-6"
-                onClick={() => toggleForm("exp")}
+                onClick={() => setOpenForm("exp")}
                 disabled={!selectedStaff}
-                variant={openForm === "exp" ? undefined: "outline"}
               >
                 Expense Entry
               </Button>
 
               <Button
-                className="px-4 md:px-6"
-                onClick={() => toggleForm("received")}
+                variant="outline"
+                onClick={() => setOpenForm("received")}
                 disabled={!selectedStaff}
-                variant={openForm === "received" ? undefined : "outline"}
               >
                 Amount Received
               </Button>
 
-              <Button className="px-4 md:px-6">Export</Button>
+              <Button variant="outline">
+                Export
+              </Button>
             </div>
           </div>
 
@@ -114,64 +144,66 @@ export default function StaffLedgerTable() {
           {selectedStaff && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted rounded-lg border">
               <div>
-                <p className="text-xs text-muted-foreground">Account Of</p>
-                <p className="font-semibold text-default-900">{selectedStaff}</p>
+                <p className="text-xs text-muted-foreground">
+                  Account Of
+                </p>
+                <p className="font-semibold text-default-900">
+                  {selectedStaffLedger?.name || "—"}
+                </p>
               </div>
 
               <div>
-                <p className="text-xs text-muted-foreground">Address</p>
-                <p className="text-default-700">—</p>
+                <p className="text-xs text-muted-foreground">
+                  Address
+                </p>
+                <p className="text-default-700">
+                  {selectedStaffLedger?.address || "—"}
+                </p>
               </div>
 
               <div>
-                <p className="text-xs text-muted-foreground">Contact No</p>
-                <p className="font-medium text-default-700">9340309474</p>
+                <p className="text-xs text-muted-foreground">
+                  Contact No
+                </p>
+                <p className="font-medium text-default-700">
+                  {selectedStaffLedger?.mobile || "—"}
+                </p>
               </div>
             </div>
           )}
 
-          {/* -------- Ledger Table -------- */}
+          {/* -------- Ledger Table (placeholder) -------- */}
           <ScrollArea className="rounded-md border w-full overflow-auto">
-            <table className="min-w-[900px] w-full table-auto">
-              <thead className="bg-default-100 text-default-700">
+            <table className="min-w-[900px] w-full">
+              <thead className="bg-default-100">
                 <tr>
                   <th className="p-3 text-left">Date</th>
                   <th className="p-3 text-left">Site</th>
                   <th className="p-3 text-left">Summary</th>
                   <th className="p-3 text-left">Through</th>
-                  <th className="p-3 text-left text-red-500">Out</th>
-                  <th className="p-3 text-left text-green-500">In</th>
-                  <th className="p-3 text-left">Balance</th>
-                  <th className="p-3 text-left">Action</th>
+                  <th className="p-3 text-left text-red-500">
+                    Out
+                  </th>
+                  <th className="p-3 text-left text-green-500">
+                    In
+                  </th>
+                  <th className="p-3 text-left">
+                    Balance
+                  </th>
+                  <th className="p-3 text-left">
+                    Action
+                  </th>
                 </tr>
               </thead>
 
               <tbody>
-                {filteredData.map((row, i) => (
-                  <tr
-                    key={i}
-                    className="border-t hover:bg-default-50 transition"
-                  >
-                    <td className="p-3">{row.date}</td>
-                    <td className="p-3">{row.site}</td>
-                    <td className="p-3">{row.summary}</td>
-                    <td className="p-3">{row.through}</td>
-
-                    <td className="p-3 text-red-500 font-semibold">₹ {row.out}</td>
-                    <td className="p-3 text-green-500 font-semibold">₹ {row.in}</td>
-                    <td className="p-3">₹ {row.balance}</td>
-
-                    <td className="p-3 flex gap-2">
-                      <Button size="sm" variant="outline">Edit</Button>
-                      <Button size="sm" variant="soft">Delete</Button>
-                    </td>
-                  </tr>
-                ))}
-
-                {filteredData.length === 0 && selectedStaff && (
+                {!selectedStaff && (
                   <tr>
-                    <td colSpan={8} className="text-center p-4 text-muted-foreground">
-                      No ledger records found for this staff.
+                    <td
+                      colSpan={8}
+                      className="text-center p-6 text-muted-foreground"
+                    >
+                      Please select a staff to view ledger.
                     </td>
                   </tr>
                 )}
@@ -181,22 +213,37 @@ export default function StaffLedgerTable() {
         </CardContent>
       </Card>
 
-      {/* ================= DYNAMIC FORMS ================= */}
-      <div className="mt-4">
-        {openForm === "exp" && (
+      {/* ================= EXPENSE ENTRY POPUP ================= */}
+      <Dialog
+        open={openForm === "exp"}
+        onOpenChange={() => setOpenForm(null)}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Expense Entry</DialogTitle>
+          </DialogHeader>
           <StaffExpEntryForm
             staff={selectedStaff}
             onClose={() => setOpenForm(null)}
           />
-        )}
+        </DialogContent>
+      </Dialog>
 
-        {openForm === "received" && (
+      {/* ================= AMOUNT RECEIVED POPUP ================= */}
+      <Dialog
+        open={openForm === "received"}
+        onOpenChange={() => setOpenForm(null)}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Amount Received</DialogTitle>
+          </DialogHeader>
           <StaffAmountReceive
             staff={selectedStaff}
             onClose={() => setOpenForm(null)}
           />
-        )}
-      </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

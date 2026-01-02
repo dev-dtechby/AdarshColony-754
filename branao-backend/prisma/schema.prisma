@@ -56,7 +56,8 @@ model Site {
   documents SiteDocument[]
   estimate  SiteEstimate?
   vouchers  Voucher[]
-
+  ledgers   Ledger[]
+  
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
   deletedBy String?
@@ -262,4 +263,55 @@ model Voucher {
 
   @@index([siteId])
   @@index([departmentId])
+}
+
+////////////////////////////////////////////////
+/// ============== LEDGER TYPE ================
+////////////////////////////////////////////////
+model LedgerType {
+  id   String @id @default(cuid())
+  name String @unique
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ledgers Ledger[]
+
+  @@index([isDeleted])
+}
+
+////////////////////////////////////////////////
+/// ================= LEDGER ==================
+////////////////////////////////////////////////
+model Ledger {
+  id String @id @default(cuid())
+
+  ledgerTypeId String
+  ledgerType   LedgerType @relation(fields: [ledgerTypeId], references: [id])
+
+  siteId String?
+  site   Site? @relation(fields: [siteId], references: [id])
+
+  name    String
+  address String?
+  mobile  String?
+
+  openingBalance Decimal? @db.Decimal(18, 2)
+  closingBalance Decimal? @db.Decimal(18, 2)
+  remark          String?
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ledgerTypeId])
+  @@index([siteId])
+  @@index([isDeleted])
 }
