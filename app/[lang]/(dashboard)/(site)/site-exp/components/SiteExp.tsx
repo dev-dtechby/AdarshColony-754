@@ -25,12 +25,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 /* ========= EXPORT ========= */
-
 import {
   exportSiteExpenseToExcel,
   exportSiteExpenseToPDF,
 } from "./siteExpExportUtils";
-
 
 import DeleteConfirmDialog from "@/components/common/DeleteConfirmDialog";
 
@@ -75,7 +73,11 @@ export default function SiteExp() {
 
   /* ================= LOAD SITES ================= */
   useEffect(() => {
-    fetch(SITE_API)
+    // ✅ cache bust + no-store
+    fetch(`${SITE_API}?_ts=${Date.now()}`, {
+      credentials: "include",
+      cache: "no-store",
+    })
       .then((r) => r.json())
       .then((j) => setSites(j.data || []))
       .catch(() => setSites([]));
@@ -84,7 +86,11 @@ export default function SiteExp() {
   /* ================= LOAD EXPENSES ================= */
   const loadExpenses = async () => {
     try {
-      const res = await fetch(EXP_API);
+      // ✅ cache bust + no-store (important)
+      const res = await fetch(`${EXP_API}?_ts=${Date.now()}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
       const json = await res.json();
       setExpenses(json.data || []);
     } catch {
@@ -95,6 +101,28 @@ export default function SiteExp() {
   useEffect(() => {
     loadExpenses();
   }, []);
+
+  /* ✅ IMPORTANT FIX:
+     If you edit staff-ledger in another page and come back here,
+     Next.js may keep state. So refresh on focus/visibility. */
+  useEffect(() => {
+    const refreshIfExpMode = () => {
+      if (viewMode === "exp") loadExpenses();
+    };
+
+    const onFocus = () => refreshIfExpMode();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshIfExpMode();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [viewMode]); // viewMode change respected
 
   /* ================= FILTER + GLOBAL SEARCH ================= */
   const filtered = expenses.filter((v) => {
@@ -156,6 +184,7 @@ export default function SiteExp() {
       setDeleteLoading(true);
       const res = await fetch(`${EXP_API}/${selectedExp.id}`, {
         method: "DELETE", // ✅ SOFT DELETE
+        credentials: "include",
       });
 
       if (!res.ok) throw new Error();
@@ -231,10 +260,18 @@ export default function SiteExp() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => exportSiteExpenseToExcel(exportData, "site-expenses")}>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      exportSiteExpenseToExcel(exportData, "site-expenses")
+                    }
+                  >
                     Excel
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => exportSiteExpenseToPDF(exportData, "site-expenses")}>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      exportSiteExpenseToPDF(exportData, "site-expenses")
+                    }
+                  >
                     PDF
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -290,8 +327,6 @@ export default function SiteExp() {
                               <Edit className="h-4 w-4" />
                             </Button>
 
-
-                            {/* 🔥 ONLY DELETE BUTTON UPDATED */}
                             <Button
                               size="icon"
                               variant="outline"
@@ -311,9 +346,7 @@ export default function SiteExp() {
                       <tr className="font-semibold bg-muted/40 border-t">
                         <td className="px-3 py-2">Total</td>
                         <td colSpan={3}></td>
-                        <td className="px-3 py-2 text-right">
-                          ₹ {totalAmount}
-                        </td>
+                        <td className="px-3 py-2 text-right">₹ {totalAmount}</td>
                         <td></td>
                       </tr>
                     )}
@@ -339,6 +372,7 @@ export default function SiteExp() {
         }}
         onConfirm={confirmDelete}
       />
+
       <Dialog open={openEdit} onOpenChange={setOpenEdit}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>

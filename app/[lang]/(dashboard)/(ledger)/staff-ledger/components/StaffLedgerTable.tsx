@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -21,6 +21,10 @@ import StaffExpEntryForm from "./StaffExpEntryForm";
 import StaffAmountReceive from "./StaffAmountReceive";
 import EditStaffLedger from "./EditStaffLedger";
 import { StaffExpense } from "./types";
+import {
+  exportStaffLedgerToExcel,
+  exportStaffLedgerToPDF,
+} from "./StaffLedgerExp";
 
 /* ================= TYPES ================= */
 interface Ledger {
@@ -48,11 +52,15 @@ export default function StaffLedgerTable() {
   const [entries, setEntries] = useState<StaffExpense[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // 🔥 Edit row state
   const [editRow, setEditRow] =
     useState<StaffExpense | null>(null);
 
-  /* ================= FETCH STAFF / SUPERVISOR LEDGERS ================= */
+  const [showExport, setShowExport] = useState(false);
+
+  // ✅ Export dropdown close on outside click
+  const exportWrapRef = useRef<HTMLDivElement | null>(null);
+
+  /* ================= FETCH LEDGERS ================= */
   useEffect(() => {
     fetchStaffLedgers();
   }, []);
@@ -76,13 +84,12 @@ export default function StaffLedgerTable() {
         ) ?? [];
 
       setStaffLedgers(filtered);
-    } catch (err) {
-      console.error("Failed to fetch ledgers", err);
+    } catch {
       setStaffLedgers([]);
     }
   };
 
-  /* ================= FETCH LEDGER ENTRIES ================= */
+  /* ================= FETCH ENTRIES ================= */
   useEffect(() => {
     if (!selectedLedger?.id) {
       setEntries([]);
@@ -94,16 +101,13 @@ export default function StaffLedgerTable() {
   const fetchEntries = async (staffLedgerId: string) => {
     try {
       setLoading(true);
-
       const res = await fetch(
         `${BASE_URL}/api/staff-expense?staffLedgerId=${staffLedgerId}`,
         { credentials: "include" }
       );
-
       const json = await res.json();
       setEntries(json?.data ?? []);
-    } catch (err) {
-      console.error("Failed to fetch ledger entries", err);
+    } catch {
       setEntries([]);
     } finally {
       setLoading(false);
@@ -119,7 +123,6 @@ export default function StaffLedgerTable() {
   /* ================= RUNNING BALANCE ================= */
   const rowsWithBalance = useMemo(() => {
     let balance = 0;
-
     return [...entries]
       .sort(
         (a, b) =>
@@ -132,6 +135,50 @@ export default function StaffLedgerTable() {
         return { ...row, balance };
       });
   }, [entries]);
+
+  /* ================= EXPORT DATA ================= */
+  const exportData = useMemo(() => {
+    return rowsWithBalance.map((r) => ({
+      Date: new Date(r.expenseDate).toLocaleDateString(),
+      Site: r.site?.siteName || "",
+      Expense: r.expenseTitle,
+      Summary: r.summary || "",
+      Remark: r.remark || "",
+      In: r.inAmount || "",
+      Out: r.outAmount || "",
+      Balance: r.balance,
+    }));
+  }, [rowsWithBalance]);
+
+  /* ================= EXPORT DROPDOWN: OUTSIDE CLICK ================= */
+  useEffect(() => {
+    if (!showExport) return;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+
+      // If click is outside export wrapper => close dropdown
+      if (
+        exportWrapRef.current &&
+        !exportWrapRef.current.contains(target)
+      ) {
+        setShowExport(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowExport(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showExport]);
 
   /* ================= UI ================= */
   return (
@@ -153,11 +200,9 @@ export default function StaffLedgerTable() {
                 onChange={(e) => {
                   const val = e.target.value;
                   setSearch(val);
-
                   const ledger = staffLedgers.find(
                     (l) => l.name === val
                   );
-
                   setSelectedLedger(ledger || null);
                 }}
                 list="staff-options"
@@ -172,7 +217,10 @@ export default function StaffLedgerTable() {
             <div className="flex gap-2 md:ml-auto flex-wrap">
               <Button
                 disabled={!selectedLedger}
-                onClick={() => setOpenForm("exp")}
+                onClick={() => {
+                  setShowExport(false);
+                  setOpenForm("exp");
+                }}
               >
                 Expense Entry
               </Button>
@@ -180,21 +228,57 @@ export default function StaffLedgerTable() {
               <Button
                 variant="outline"
                 disabled={!selectedLedger}
-                onClick={() => setOpenForm("received")}
+                onClick={() => {
+                  setShowExport(false);
+                  setOpenForm("received");
+                }}
               >
                 Amount Received
               </Button>
 
-              <Button
-                variant="outline"
-                disabled={!selectedLedger}
-              >
-                Export
-              </Button>
+              {/* ✅ Export wrapper ref: dropdown closes on outside click */}
+              <div ref={exportWrapRef} className="relative">
+                <Button
+                  variant="outline"
+                  disabled={!selectedLedger}
+                  onClick={() => setShowExport(!showExport)}
+                >
+                  Export
+                </Button>
+
+                {showExport && selectedLedger && (
+                  <div className="absolute right-0 top-12 w-44 bg-background border rounded-md shadow z-50">
+                    <button
+                      className="w-full px-4 py-2 text-left hover:bg-muted text-sm"
+                      onClick={() => {
+                        exportStaffLedgerToExcel(
+                          exportData,
+                          selectedLedger.name
+                        );
+                        setShowExport(false); // ✅ close after action
+                      }}
+                    >
+                      Export Excel
+                    </button>
+                    <button
+                      className="w-full px-4 py-2 text-left hover:bg-muted text-sm"
+                      onClick={() => {
+                        exportStaffLedgerToPDF(
+                          exportData,
+                          selectedLedger.name
+                        );
+                        setShowExport(false); // ✅ close after action
+                      }}
+                    >
+                      Export PDF
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* ===== Staff Info ===== */}
+          {/* ===== STAFF INFO ===== */}
           {selectedLedger && (
             <div className="grid md:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted">
               <div>
@@ -214,7 +298,7 @@ export default function StaffLedgerTable() {
             </div>
           )}
 
-          {/* ================= LEDGER TABLE ================= */}
+          {/* ===== TABLE ===== */}
           <div style={{ overflowX: "auto", width: "100%" }}>
             <table
               className="w-full text-sm"
@@ -227,29 +311,14 @@ export default function StaffLedgerTable() {
                   <th className="p-3">Expense</th>
                   <th className="p-3">Summary</th>
                   <th className="p-3">Remark</th>
-                  <th className="p-3 text-green-600">
-                    Received (In)
-                  </th>
-                  <th className="p-3 text-red-500">
-                    Payment (Out)
-                  </th>
+                  <th className="p-3 text-green-600">In</th>
+                  <th className="p-3 text-red-500">Out</th>
                   <th className="p-3">Balance</th>
                   <th className="p-3">Action</th>
                 </tr>
               </thead>
 
               <tbody>
-                {!selectedLedger && (
-                  <tr>
-                    <td
-                      colSpan={9}
-                      className="p-6 text-center text-muted-foreground"
-                    >
-                      Please select a staff ledger
-                    </td>
-                  </tr>
-                )}
-
                 {loading && (
                   <tr>
                     <td colSpan={9} className="p-6 text-center">
@@ -269,15 +338,9 @@ export default function StaffLedgerTable() {
                     <td className="p-3">
                       {row.site?.siteName || "—"}
                     </td>
-                    <td className="p-3">
-                      {row.expenseTitle}
-                    </td>
-                    <td className="p-3">
-                      {row.summary || "—"}
-                    </td>
-                    <td className="p-3">
-                      {row.remark || "—"}
-                    </td>
+                    <td className="p-3">{row.expenseTitle}</td>
+                    <td className="p-3">{row.summary || "—"}</td>
+                    <td className="p-3">{row.remark || "—"}</td>
                     <td className="p-3 text-green-600">
                       {row.inAmount ?? ""}
                     </td>
@@ -302,7 +365,7 @@ export default function StaffLedgerTable() {
         </CardContent>
       </Card>
 
-      {/* ===== Expense Popup ===== */}
+      {/* ===== POPUPS ===== */}
       <Dialog
         open={openForm === "exp"}
         onOpenChange={() => setOpenForm(null)}
@@ -323,7 +386,6 @@ export default function StaffLedgerTable() {
         </DialogContent>
       </Dialog>
 
-      {/* ===== Received Popup ===== */}
       <Dialog
         open={openForm === "received"}
         onOpenChange={() => setOpenForm(null)}
@@ -334,10 +396,7 @@ export default function StaffLedgerTable() {
           </DialogHeader>
           {selectedLedger && (
             <StaffAmountReceive
-              staffLedger={{
-                id: selectedLedger.id,
-                name: selectedLedger.name,
-              }}
+              staffLedger={selectedLedger}
               onClose={() => {
                 setOpenForm(null);
                 fetchEntries(selectedLedger.id);
@@ -347,19 +406,14 @@ export default function StaffLedgerTable() {
         </DialogContent>
       </Dialog>
 
-      {/* ===== Edit Popup ===== */}
-      <Dialog
-        open={!!editRow}
-        onOpenChange={() => setEditRow(null)}
-      >
+      <Dialog open={!!editRow} onOpenChange={() => setEditRow(null)}>
         <DialogContent className="max-w-xl">
           {editRow && (
             <EditStaffLedger
               row={editRow}
               onClose={() => setEditRow(null)}
               onUpdated={() =>
-                selectedLedger &&
-                fetchEntries(selectedLedger.id)
+                selectedLedger && fetchEntries(selectedLedger.id)
               }
             />
           )}
