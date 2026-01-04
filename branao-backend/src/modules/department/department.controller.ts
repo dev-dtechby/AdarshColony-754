@@ -72,6 +72,45 @@ export const createDepartment = async (req: Request, res: Response) => {
 };
 
 /* ================================
+   ✅ UPDATE DEPARTMENT
+================================ */
+export const updateDepartment = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Department id is required",
+      });
+    }
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Department name is required",
+      });
+    }
+
+    const updated = await service.updateDepartment(id, name.trim());
+
+    res.status(200).json({
+      success: true,
+      data: updated,
+      message: "Department updated successfully",
+    });
+  } catch (error: any) {
+    console.error("Update Department Error:", error);
+
+    res.status(400).json({
+      success: false,
+      message: error.message || "Department update failed",
+    });
+  }
+};
+
+/* ================================
    SOFT DELETE DEPARTMENT
    (Default Delete)
 ================================ */

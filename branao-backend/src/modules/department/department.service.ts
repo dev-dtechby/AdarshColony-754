@@ -54,6 +54,39 @@ export const createDepartment = async (name: string) => {
 };
 
 /* ================================
+   ✅ UPDATE DEPARTMENT
+================================ */
+export const updateDepartment = async (id: string, name: string) => {
+  if (!id) throw new Error("Department id is required");
+  if (!name || !name.trim()) throw new Error("Department name is required");
+
+  // ensure department exists (active)
+  const dept = await prisma.department.findUnique({ where: { id } });
+  if (!dept) throw new Error("Department not found");
+  if (dept.isDeleted) throw new Error("Cannot update a deleted department");
+
+  // duplicate check (active only, excluding current)
+  const dup = await prisma.department.findFirst({
+    where: {
+      name: name.trim(),
+      isDeleted: false,
+      NOT: { id },
+    },
+  });
+
+  if (dup) {
+    throw new Error("Department already exists");
+  }
+
+  return prisma.department.update({
+    where: { id },
+    data: {
+      name: name.trim(),
+    },
+  });
+};
+
+/* ================================
    SOFT DELETE DEPARTMENT
    (DEFAULT DELETE)
 ================================ */

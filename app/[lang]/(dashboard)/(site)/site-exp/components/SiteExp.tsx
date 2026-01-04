@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,13 @@ import {
 
 import DeleteConfirmDialog from "@/components/common/DeleteConfirmDialog";
 
+/* ✅ IMPORT (ONLY ADDITION) */
+import { importSiteExpenseExcel } from "./SiteExpImoprtUtils";
+import { useToast } from "@/components/ui/use-toast";
+
+/* ✅ BULK EDIT COMPONENT (NEW) */
+import BulkEditSiteExp from "./BulkEditSiteExp";
+
 /* ================= TYPES ================= */
 interface Site {
   id: string;
@@ -40,7 +47,8 @@ interface Site {
 
 interface Expense {
   id: string;
-  site: { siteName: string };
+  // ✅ IMPORTANT: bulk edit needs site.id also (backward compatible)
+  site: { id?: string; siteName: string };
   expenseDate: string;
   expenseTitle: string;
   summary: string;
@@ -56,6 +64,8 @@ const SITE_API = `${BASE_URL}/api/sites`;
 const EXP_API = `${BASE_URL}/api/site-exp`;
 
 export default function SiteExp() {
+  const { toast } = useToast();
+
   const [viewMode, setViewMode] = useState<"exp" | "summary">("exp");
   const [search, setSearch] = useState("");
   const [selectedSite, setSelectedSite] = useState("");
@@ -66,14 +76,25 @@ export default function SiteExp() {
   const [openEdit, setOpenEdit] = useState(false);
   const [selectedEditExp, setSelectedEditExp] = useState<any>(null);
 
-  /* 🔥 DELETE STATES (ONLY ADDITION) */
+  /* 🔥 DELETE STATES (EXISTING) */
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedExp, setSelectedExp] = useState<Expense | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  /* ✅ IMPORT STATES (EXISTING) */
+  const [openImportGuide, setOpenImportGuide] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  /* ✅ BULK SELECTION STATES (NEW ADDITION) */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+
+  const [openBulkEdit, setOpenBulkEdit] = useState(false);
+
   /* ================= LOAD SITES ================= */
   useEffect(() => {
-    // ✅ cache bust + no-store
     fetch(`${SITE_API}?_ts=${Date.now()}`, {
       credentials: "include",
       cache: "no-store",
@@ -86,7 +107,6 @@ export default function SiteExp() {
   /* ================= LOAD EXPENSES ================= */
   const loadExpenses = async () => {
     try {
-      // ✅ cache bust + no-store (important)
       const res = await fetch(`${EXP_API}?_ts=${Date.now()}`, {
         credentials: "include",
         cache: "no-store",
@@ -103,7 +123,7 @@ export default function SiteExp() {
   }, []);
 
   /* ✅ IMPORTANT FIX:
-     If you edit staff-ledger in another page and come back here,
+     If you edit somewhere and come back here,
      Next.js may keep state. So refresh on focus/visibility. */
   useEffect(() => {
     const refreshIfExpMode = () => {
@@ -122,35 +142,44 @@ export default function SiteExp() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [viewMode]); // viewMode change respected
+  }, [viewMode]);
 
   /* ================= FILTER + GLOBAL SEARCH ================= */
-  const filtered = expenses.filter((v) => {
-    const q = search.toLowerCase();
+  const filtered = useMemo(() => {
+    return expenses.filter((v) => {
+      const q = search.toLowerCase();
 
-    const matchSearch =
-      v.expenseTitle?.toLowerCase().includes(q) ||
-      v.summary?.toLowerCase().includes(q) ||
-      v.paymentDetails?.toLowerCase().includes(q) ||
-      v.site?.siteName?.toLowerCase().includes(q) ||
-      String(v.amount).includes(q) ||
-      new Date(v.expenseDate)
-        .toLocaleDateString()
-        .toLowerCase()
-        .includes(q);
+      const matchSearch =
+        v.expenseTitle?.toLowerCase().includes(q) ||
+        v.summary?.toLowerCase().includes(q) ||
+        v.paymentDetails?.toLowerCase().includes(q) ||
+        v.site?.siteName?.toLowerCase().includes(q) ||
+        String(v.amount).includes(q) ||
+        new Date(v.expenseDate)
+          .toLocaleDateString()
+          .toLowerCase()
+          .includes(q);
 
-    const matchSite = selectedSite
-      ? v.site?.siteName === selectedSite
-      : true;
+      const matchSite = selectedSite ? v.site?.siteName === selectedSite : true;
+      return matchSearch && matchSite;
+    });
+  }, [expenses, search, selectedSite]);
 
-    return matchSearch && matchSite;
-  });
+  /* ✅ keep selection clean when filter changes (optional but best UX) */
+  useEffect(() => {
+    // remove ids that no longer exist in expenses
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      const allIds = new Set(expenses.map((e) => e.id));
+      prev.forEach((id) => {
+        if (allIds.has(id)) next.add(id);
+      });
+      return next;
+    });
+  }, [expenses]);
 
   /* ================= TOTAL ================= */
-  const totalAmount = filtered.reduce(
-    (sum, v) => sum + Number(v.amount || 0),
-    0
-  );
+  const totalAmount = filtered.reduce((sum, v) => sum + Number(v.amount || 0), 0);
 
   /* ================= EXPORT ================= */
   const exportData = [
@@ -176,14 +205,14 @@ export default function SiteExp() {
       : []),
   ];
 
-  /* ================= SOFT DELETE (ONLY NEW LOGIC) ================= */
+  /* ================= SINGLE SOFT DELETE (EXISTING) ================= */
   const confirmDelete = async () => {
     if (!selectedExp) return;
 
     try {
       setDeleteLoading(true);
       const res = await fetch(`${EXP_API}/${selectedExp.id}`, {
-        method: "DELETE", // ✅ SOFT DELETE
+        method: "DELETE",
         credentials: "include",
       });
 
@@ -191,11 +220,130 @@ export default function SiteExp() {
 
       setDeleteOpen(false);
       setSelectedExp(null);
+
+      // ✅ remove from selection if selected
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(selectedExp.id);
+        return next;
+      });
+
       loadExpenses();
     } catch {
       alert("❌ Delete failed");
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  /* ================= BULK SELECTION HELPERS (NEW) ================= */
+  const toggleRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+
+      if (allVisibleSelected) {
+        // unselect all visible
+        visibleIds.forEach((id) => next.delete(id));
+      } else {
+        // select all visible
+        visibleIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const selectedRows = useMemo(
+    () => expenses.filter((e) => selectedIds.has(e.id)),
+    [expenses, selectedIds]
+  );
+
+  /* ================= BULK DELETE (NEW) ================= */
+  const confirmBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+
+    try {
+      setBulkDeleteLoading(true);
+
+      // ✅ sequential delete (safe)
+      for (const id of Array.from(selectedIds)) {
+        const res = await fetch(`${EXP_API}/${id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+
+        if (!res.ok) {
+          // stop on first failure
+          throw new Error("Bulk delete failed on some rows");
+        }
+      }
+
+      toast({
+        title: "✅ Bulk delete completed",
+        description: `${selectedIds.size} rows moved to deleted records`,
+      });
+
+      setBulkDeleteOpen(false);
+      setSelectedIds(new Set());
+      await loadExpenses();
+    } catch (e: any) {
+      toast({
+        title: "❌ Bulk delete failed",
+        description: e?.message || "Failed",
+      });
+    } finally {
+      setBulkDeleteLoading(false);
+    }
+  };
+
+  /* ================= IMPORT HANDLER (EXISTING) ================= */
+  const runImport = async (file: File) => {
+    try {
+      setImporting(true);
+
+      toast({
+        title: "⏳ Import started",
+        description: "Please wait... entries are being imported",
+      });
+
+      const result = await importSiteExpenseExcel({
+        file,
+        baseUrl: BASE_URL,
+      });
+
+      await loadExpenses();
+
+      if (result.failCount === 0) {
+        toast({
+          title: "✅ Import completed",
+          description: `${result.successCount} rows imported successfully`,
+        });
+      } else {
+        toast({
+          title: "⚠️ Import completed with errors",
+          description: `Success: ${result.successCount}, Failed: ${result.failCount} (check console for error rows)`,
+        });
+        console.log("SITE-EXP IMPORT ERRORS:", result.errors);
+      }
+    } catch (e: any) {
+      toast({
+        title: "❌ Import failed",
+        description: e?.message || "Import failed",
+      });
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -252,6 +400,46 @@ export default function SiteExp() {
                 Add Expense Entry
               </Button>
 
+              {/* ✅ BULK EDIT / DELETE (NEW ADDITION) */}
+              <Button
+                variant="outline"
+                disabled={selectedIds.size === 0}
+                onClick={() => setOpenBulkEdit(true)}
+              >
+                Bulk Edit ({selectedIds.size})
+              </Button>
+
+              <Button
+                variant="outline"
+                disabled={selectedIds.size === 0}
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                Bulk Delete ({selectedIds.size})
+              </Button>
+
+              {/* ✅ IMPORT BUTTON (EXISTING) */}
+              <Button
+                variant="outline"
+                disabled={importing}
+                onClick={() => setOpenImportGuide(true)}
+              >
+                {importing ? "Importing..." : "Import Excel"}
+              </Button>
+
+              {/* hidden file input */}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = ""; // allow re-upload same file
+                  if (!file) return;
+                  await runImport(file);
+                }}
+              />
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline">
@@ -288,6 +476,16 @@ export default function SiteExp() {
                 <table className="w-full text-sm border-collapse">
                   <thead className="bg-muted/60 sticky top-0 border-b">
                     <tr className="text-xs uppercase tracking-wide text-muted-foreground">
+                      {/* ✅ CHECKBOX HEADER (NEW) */}
+                      <th className="px-3 py-2 text-left w-10">
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          onChange={toggleSelectAllVisible}
+                          aria-label="Select all visible"
+                        />
+                      </th>
+
                       <th className="px-3 py-2 text-left">Date</th>
                       <th className="px-3 py-2 text-left">Expenses</th>
                       <th className="px-3 py-2 text-left">Exp. Summary</th>
@@ -298,52 +496,71 @@ export default function SiteExp() {
                   </thead>
 
                   <tbody>
-                    {filtered.map((row) => (
-                      <tr
-                        key={row.id}
-                        className="border-t hover:bg-primary/10 transition"
-                      >
-                        <td className="px-3 py-2">
-                          {new Date(row.expenseDate).toLocaleDateString()}
-                        </td>
-                        <td className="px-3 py-2 font-medium">
-                          {row.expenseTitle}
-                        </td>
-                        <td className="px-3 py-2">{row.summary}</td>
-                        <td className="px-3 py-2">{row.paymentDetails}</td>
-                        <td className="px-3 py-2 text-right font-semibold">
-                          ₹ {row.amount}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex justify-center gap-2">
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedEditExp(row);
-                                setOpenEdit(true);
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
+                    {filtered.map((row) => {
+                      const checked = selectedIds.has(row.id);
 
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedExp(row);
-                                setDeleteOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                      return (
+                        <tr
+                          key={row.id}
+                          className={`border-t transition ${
+                            checked
+                              ? "bg-primary/15"
+                              : "hover:bg-primary/10"
+                          }`}
+                        >
+                          {/* ✅ CHECKBOX CELL (NEW) */}
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRow(row.id)}
+                              aria-label={`Select row ${row.id}`}
+                            />
+                          </td>
+
+                          <td className="px-3 py-2">
+                            {new Date(row.expenseDate).toLocaleDateString()}
+                          </td>
+                          <td className="px-3 py-2 font-medium">
+                            {row.expenseTitle}
+                          </td>
+                          <td className="px-3 py-2">{row.summary}</td>
+                          <td className="px-3 py-2">{row.paymentDetails}</td>
+                          <td className="px-3 py-2 text-right font-semibold">
+                            ₹ {row.amount}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex justify-center gap-2">
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedEditExp(row);
+                                  setOpenEdit(true);
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedExp(row);
+                                  setDeleteOpen(true);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
 
                     {filtered.length > 0 && (
                       <tr className="font-semibold bg-muted/40 border-t">
+                        <td className="px-3 py-2"></td>
                         <td className="px-3 py-2">Total</td>
                         <td colSpan={3}></td>
                         <td className="px-3 py-2 text-right">₹ {totalAmount}</td>
@@ -360,7 +577,64 @@ export default function SiteExp() {
         {viewMode === "summary" && <SiteSummaryCards />}
       </Card>
 
-      {/* 🔥 DELETE CONFIRM DIALOG (ONLY ADDITION) */}
+      {/* ✅ IMPORT GUIDELINE POPUP (EXISTING) */}
+      <Dialog open={openImportGuide} onOpenChange={setOpenImportGuide}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Excel Import Guidelines</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 text-sm leading-6">
+            <p className="font-medium">
+              Excel file must have exactly these columns in first row (same
+              order):
+            </p>
+
+            <div className="p-3 rounded-md border bg-muted/40 font-mono text-xs">
+              Site | Date | Expenses | Exp. Summary | Payment | Amount
+            </div>
+
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                <b>Site</b> must match site name exactly as in Sites master.
+              </li>
+              <li>
+                <b>Date</b> can be Excel Date or text (dd-mm-yyyy / dd/mm/yyyy /
+                yyyy-mm-dd).
+              </li>
+              <li>
+                <b>Expenses</b> is mandatory.
+              </li>
+              <li>
+                <b>Amount</b> must be greater than 0.
+              </li>
+              <li>Every row will create a new expense entry.</li>
+            </ul>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setOpenImportGuide(false)}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              onClick={() => {
+                setOpenImportGuide(false);
+                setTimeout(() => fileRef.current?.click(), 0);
+              }}
+              disabled={importing}
+            >
+              OK, Select Excel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 🔥 SINGLE DELETE CONFIRM (EXISTING) */}
       <DeleteConfirmDialog
         open={deleteOpen}
         title="Delete Expense?"
@@ -373,6 +647,48 @@ export default function SiteExp() {
         onConfirm={confirmDelete}
       />
 
+      {/* ✅ BULK DELETE CONFIRM (NEW) */}
+      <DeleteConfirmDialog
+        open={bulkDeleteOpen}
+        title={`Delete ${selectedIds.size} Expenses?`}
+        description="Selected expense entries will be moved to Deleted Records. You can restore them later."
+        loading={bulkDeleteLoading}
+        onCancel={() => setBulkDeleteOpen(false)}
+        onConfirm={confirmBulkDelete}
+      />
+
+      {/* ✅ BULK EDIT MODAL (NEW) */}
+{/* ✅ BULK EDIT MODAL (FULL WIDTH + FULL HEIGHT FIX) */}
+{/* ✅ BULK EDIT MODAL */}
+        <Dialog open={openBulkEdit} onOpenChange={setOpenBulkEdit}>
+          <DialogContent
+            className="
+              !w-[98vw]
+              sm:!max-w-[1400px]
+              !h-[92vh]
+              !p-0
+              !flex
+              !flex-col
+              overflow-hidden
+            "
+          >
+            <BulkEditSiteExp
+              rows={selectedRows as any}
+              sites={sites}
+              baseUrl={BASE_URL}
+              onCancel={() => setOpenBulkEdit(false)}
+              onSaved={async () => {
+                setOpenBulkEdit(false);
+                setSelectedIds(new Set());
+                await loadExpenses();
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+
+
+
+      {/* EDIT MODAL (EXISTING) */}
       <Dialog open={openEdit} onOpenChange={setOpenEdit}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -397,7 +713,7 @@ export default function SiteExp() {
         </DialogContent>
       </Dialog>
 
-      {/* ADD EXP MODAL */}
+      {/* ADD EXP MODAL (EXISTING) */}
       <Dialog open={openAddExp} onOpenChange={setOpenAddExp}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>

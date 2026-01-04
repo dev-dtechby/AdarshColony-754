@@ -6,6 +6,7 @@ import {
   deleteDepartment,
   restoreDepartment,
   hardDeleteDepartment,
+  updateDepartment, // ✅ add
 } from "./department.controller";
 
 const router = Router();
@@ -22,6 +23,9 @@ router.get("/deleted", getDeletedDepartments);
 
 // 🔹 CREATE
 router.post("/", createDepartment);
+
+// ✅ UPDATE (EDIT)
+router.put("/:id", updateDepartment);
 
 // 🔹 SOFT DELETE (DEFAULT DELETE)
 router.delete("/:id", deleteDepartment);

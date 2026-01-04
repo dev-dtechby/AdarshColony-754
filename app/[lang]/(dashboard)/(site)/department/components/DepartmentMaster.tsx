@@ -36,6 +36,9 @@ export default function DepartmentMaster({ onChanged }: Props) {
   const [list, setList] = useState<Department[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // ✅ Edit states
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   // delete dialog states
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Department | null>(null);
@@ -84,12 +87,60 @@ export default function DepartmentMaster({ onChanged }: Props) {
       });
 
       setName("");
-      load();
+      await load();
       onChanged?.();
     } catch (err: any) {
       toast({
         title: "❌ Error",
         description: err.message || "Add failed",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ================= START EDIT ================= */
+  const startEdit = (d: Department) => {
+    setEditingId(d.id);
+    setName(d.name);
+  };
+
+  /* ================= CANCEL EDIT ================= */
+  const cancelEdit = () => {
+    setEditingId(null);
+    setName("");
+  };
+
+  /* ================= UPDATE ================= */
+  const update = async () => {
+    if (!editingId) return;
+    if (!name.trim()) return;
+
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${API}/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: name.trim() }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.message);
+
+      toast({
+        title: "✅ Department Updated",
+        description: name,
+      });
+
+      cancelEdit();
+      await load();
+      onChanged?.();
+    } catch (err: any) {
+      toast({
+        title: "❌ Error",
+        description: err.message || "Update failed",
       });
     } finally {
       setLoading(false);
@@ -102,7 +153,7 @@ export default function DepartmentMaster({ onChanged }: Props) {
 
     try {
       const res = await fetch(`${API}/${selected.id}`, {
-        method: "DELETE", // 🔥 backend = soft delete
+        method: "DELETE",
         credentials: "include",
       });
 
@@ -115,7 +166,10 @@ export default function DepartmentMaster({ onChanged }: Props) {
 
       setOpen(false);
       setSelected(null);
-      load();
+
+      if (editingId === selected.id) cancelEdit();
+
+      await load();
       onChanged?.();
     } catch {
       toast({
@@ -131,62 +185,90 @@ export default function DepartmentMaster({ onChanged }: Props) {
       <Card className="p-6 space-y-6">
         <h2 className="text-lg font-semibold">Department Master</h2>
 
-        {/* ADD */}
+        {/* ADD / EDIT */}
         <div className="flex gap-3">
           <Input
             placeholder="Department Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <Button onClick={add} disabled={loading}>
-            {loading ? "Adding..." : "Add"}
-          </Button>
+
+          {!editingId ? (
+            <Button onClick={add} disabled={loading}>
+              {loading ? "Adding..." : "Add"}
+            </Button>
+          ) : (
+            <>
+              <Button onClick={update} disabled={loading}>
+                {loading ? "Updating..." : "Update"}
+              </Button>
+              <Button variant="outline" onClick={cancelEdit} disabled={loading}>
+                Cancel
+              </Button>
+            </>
+          )}
         </div>
 
-        {/* LIST */}
+        {/* LIST (✅ Scrollbar Added) */}
         <div className="border rounded-md overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted">
-              <tr>
-                <th className="p-2 text-left">Department</th>
-                <th className="p-2 text-center w-[140px]">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.length === 0 && (
+          {/* ✅ This wrapper creates vertical scrollbar when list is large */}
+          <div className="max-h-[320px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted sticky top-0 z-10">
                 <tr>
-                  <td
-                    colSpan={2}
-                    className="p-4 text-center text-muted-foreground"
-                  >
-                    No departments added yet
-                  </td>
+                  <th className="p-2 text-left">Department</th>
+                  <th className="p-2 text-center w-[180px]">Action</th>
                 </tr>
-              )}
+              </thead>
 
-              {list.map((d) => (
-                <tr key={d.id} className="border-t">
-                  <td className="p-2">{d.name}</td>
-                  <td className="p-2 text-center">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setSelected(d);
-                        setOpen(true);
-                      }}
+              <tbody>
+                {list.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="p-4 text-center text-muted-foreground"
                     >
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      No departments added yet
+                    </td>
+                  </tr>
+                )}
+
+                {list.map((d) => (
+                  <tr key={d.id} className="border-t">
+                    <td className="p-2">{d.name}</td>
+                    <td className="p-2">
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => startEdit(d)}
+                          disabled={loading}
+                        >
+                          Edit
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelected(d);
+                            setOpen(true);
+                          }}
+                          disabled={loading}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </Card>
 
-      {/* ================= DELETE CONFIRM DIALOG ================= */}
+      {/* DELETE CONFIRM DIALOG */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
