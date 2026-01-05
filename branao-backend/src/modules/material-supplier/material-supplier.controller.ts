@@ -1,93 +1,153 @@
 import { Request, Response } from "express";
-import { materialSupplierService } from "./material-supplier.service";
+import * as service from "./material-supplier.service";
 
-export const getMaterialSuppliers = async (req: Request, res: Response) => {
+/**
+ * Endpoints assumed:
+ * GET    /api/material-suppliers
+ * GET    /api/material-suppliers/deleted
+ * POST   /api/material-suppliers
+ * PUT    /api/material-suppliers/:id
+ * DELETE /api/material-suppliers/:id
+ * POST   /api/material-suppliers/:id/restore
+ * DELETE /api/material-suppliers/:id/hard
+ */
+
+export const getAllActive = async (_req: Request, res: Response) => {
   try {
-    const data = await materialSupplierService.getActive();
-    return res.json({ data });
-  } catch {
-    return res.status(500).json({ message: "Failed to load suppliers" });
-  }
-};
-
-export const getDeletedMaterialSuppliers = async (req: Request, res: Response) => {
-  try {
-    const data = await materialSupplierService.getDeleted();
-    return res.json({ data });
-  } catch {
-    return res.status(500).json({ message: "Failed to load deleted suppliers" });
-  }
-};
-
-export const createMaterialSupplier = async (req: Request, res: Response) => {
-  try {
-    const name = String(req.body?.name || "").trim();
-    const contactNo = String(req.body?.contactNo || "").trim();
-    const address = String(req.body?.address || "").trim();
-
-    if (!name) return res.status(400).json({ message: "Supplier name required" });
-
-    const created = await materialSupplierService.create({
-      name,
-      contactNo: contactNo || undefined,
-      address: address || undefined,
+    const data = await service.getAllMaterialSuppliers();
+    return res.status(200).json({ success: true, count: data.length, data });
+  } catch (err: any) {
+    console.error("❌ MaterialSupplier getAllActive:", err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Failed to fetch suppliers",
     });
-
-    return res.status(201).json({ message: "Supplier added", data: created });
-  } catch (e: any) {
-    return res.status(400).json({ message: e?.message || "Create failed" });
   }
 };
 
-export const updateMaterialSupplier = async (req: Request, res: Response) => {
+export const getAllDeleted = async (_req: Request, res: Response) => {
   try {
-    const id = req.params.id;
-    const name = String(req.body?.name || "").trim();
-    const contactNo = String(req.body?.contactNo || "").trim();
-    const address = String(req.body?.address || "").trim();
-
-    if (!name) return res.status(400).json({ message: "Supplier name required" });
-
-    const updated = await materialSupplierService.update(id, {
-      name,
-      contactNo: contactNo || undefined,
-      address: address || undefined,
+    const data = await service.getDeletedMaterialSuppliers();
+    return res.status(200).json({ success: true, count: data.length, data });
+  } catch (err: any) {
+    console.error("❌ MaterialSupplier getAllDeleted:", err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Failed to fetch deleted suppliers",
     });
-
-    return res.json({ message: "Supplier updated", data: updated });
-  } catch (e: any) {
-    return res.status(400).json({ message: e?.message || "Update failed" });
   }
 };
 
-export const deleteMaterialSupplier = async (req: Request, res: Response) => {
+export const create = async (req: Request, res: Response) => {
   try {
-    const id = req.params.id;
-    const deletedBy = (req.body?.deletedBy as string) || null;
+    const userId = (req as any).user?.id || "SYSTEM";
+    const ip = req.ip;
 
-    await materialSupplierService.softDelete(id, deletedBy);
-    return res.json({ message: "Supplier deleted (soft)" });
-  } catch {
-    return res.status(400).json({ message: "Delete failed" });
+    const created = await service.createMaterialSupplier(req.body, userId, ip);
+
+    return res.status(201).json({
+      success: true,
+      message: "Supplier created",
+      data: created,
+    });
+  } catch (err: any) {
+    console.error("❌ MaterialSupplier create:", err);
+    return res.status(400).json({
+      success: false,
+      message: err?.message || "Create failed",
+    });
   }
 };
 
-export const restoreMaterialSupplier = async (req: Request, res: Response) => {
+export const update = async (req: Request, res: Response) => {
   try {
-    const id = req.params.id;
-    await materialSupplierService.restore(id);
-    return res.json({ message: "Supplier restored" });
-  } catch {
-    return res.status(400).json({ message: "Restore failed" });
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ success: false, message: "id is required" });
+
+    const userId = (req as any).user?.id || "SYSTEM";
+    const ip = req.ip;
+
+    const updated = await service.updateMaterialSupplier(id, req.body, userId, ip);
+
+    return res.status(200).json({
+      success: true,
+      message: "Supplier updated",
+      data: updated,
+    });
+  } catch (err: any) {
+    console.error("❌ MaterialSupplier update:", err);
+    return res.status(400).json({
+      success: false,
+      message: err?.message || "Update failed",
+    });
   }
 };
 
-export const hardDeleteMaterialSupplier = async (req: Request, res: Response) => {
+export const softDelete = async (req: Request, res: Response) => {
   try {
-    const id = req.params.id;
-    await materialSupplierService.hardDelete(id);
-    return res.json({ message: "Supplier deleted permanently" });
-  } catch {
-    return res.status(400).json({ message: "Hard delete failed" });
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ success: false, message: "id is required" });
+
+    const userId = (req as any).user?.id || "SYSTEM";
+    const ip = req.ip;
+
+    await service.softDeleteMaterialSupplier(id, userId, ip);
+
+    return res.status(200).json({
+      success: true,
+      message: "Supplier moved to deleted records",
+    });
+  } catch (err: any) {
+    console.error("❌ MaterialSupplier softDelete:", err);
+    return res.status(400).json({
+      success: false,
+      message: err?.message || "Delete failed",
+    });
+  }
+};
+
+export const restore = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ success: false, message: "id is required" });
+
+    const userId = (req as any).user?.id || "SYSTEM";
+    const ip = req.ip;
+
+    await service.restoreMaterialSupplier(id, userId, ip);
+
+    return res.status(200).json({
+      success: true,
+      message: "Supplier restored",
+    });
+  } catch (err: any) {
+    console.error("❌ MaterialSupplier restore:", err);
+    return res.status(400).json({
+      success: false,
+      message: err?.message || "Restore failed",
+    });
+  }
+};
+
+export const hardDelete = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ success: false, message: "id is required" });
+
+    const userId = (req as any).user?.id || "SYSTEM";
+    const ip = req.ip;
+
+    await service.hardDeleteMaterialSupplier(id, userId, ip);
+
+    return res.status(200).json({
+      success: true,
+      message: "Supplier permanently deleted",
+    });
+  } catch (err: any) {
+    console.error("❌ MaterialSupplier hardDelete:", err);
+    return res.status(400).json({
+      success: false,
+      message: err?.message || "Hard delete failed",
+    });
   }
 };

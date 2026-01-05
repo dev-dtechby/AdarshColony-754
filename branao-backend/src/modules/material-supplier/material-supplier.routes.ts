@@ -1,24 +1,21 @@
-import express from "express";
-import {
-  getMaterialSuppliers,
-  getDeletedMaterialSuppliers,
-  createMaterialSupplier,
-  updateMaterialSupplier,
-  deleteMaterialSupplier,
-  restoreMaterialSupplier,
-  hardDeleteMaterialSupplier,
-} from "./material-supplier.controller";
+import { Router } from "express";
+import * as c from "./material-supplier.controller";
 
-const router = express.Router();
+const router = Router();
 
-router.get("/", getMaterialSuppliers);
-router.get("/deleted", getDeletedMaterialSuppliers);
+// ACTIVE
+router.get("/", c.getAllActive);
 
-router.post("/", createMaterialSupplier);
-router.put("/:id", updateMaterialSupplier);
+// DELETED
+router.get("/deleted", c.getAllDeleted);
 
-router.delete("/:id", deleteMaterialSupplier);        // soft delete
-router.post("/:id/restore", restoreMaterialSupplier); // restore
-router.delete("/:id/hard", hardDeleteMaterialSupplier);
+// CRUD
+router.post("/", c.create);
+router.put("/:id", c.update);
+
+// DELETE / RESTORE
+router.delete("/:id", c.softDelete);
+router.post("/:id/restore", c.restore);
+router.delete("/:id/hard", c.hardDelete);
 
 export default router;
