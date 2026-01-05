@@ -62,6 +62,10 @@ branao-backend/prisma/*.db
 branao-backend/prisma/*.db-journal
 branao-backend/prisma/migrations/
 
+# ✅ Track Prisma migrations (Required for Railway deploy)
+!branao-backend/prisma/migrations/
+!branao-backend/prisma/migrations/**
+
 # =====================================================
 # Temporary / OS
 # =====================================================
