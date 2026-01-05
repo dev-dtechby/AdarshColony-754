@@ -20,7 +20,7 @@ const getLedgerName = async (ledgerId: string) => {
   return ledger?.name || "";
 };
 
-// Legacy matching (because no staffExpenseId link exists in SiteExpense)
+// Legacy matching (fallback)
 const findMatchingSiteExpense = async (params: {
   siteId: string;
   expenseDate: Date;
@@ -37,7 +37,7 @@ const findMatchingSiteExpense = async (params: {
       siteId,
       expenseTitle,
       paymentDetails,
-      amount, // old amount match
+      amount,
       expenseDate: { gte: start, lte: end },
     },
     orderBy: { createdAt: "desc" },
@@ -46,7 +46,7 @@ const findMatchingSiteExpense = async (params: {
 
 /* ======================================================
    CREATE STAFF EXPENSE / RECEIPT (OUT + IN)
-   ====================================================== */
+====================================================== */
 export const createStaffExpense = async (req: Request, res: Response) => {
   try {
     const {
@@ -64,8 +64,7 @@ export const createStaffExpense = async (req: Request, res: Response) => {
     if (!staffLedgerId || !expenseTitle || (!outAmount && !inAmount)) {
       return res.status(400).json({
         success: false,
-        message:
-          "staffLedgerId, expenseTitle and amount (out/in) are required",
+        message: "staffLedgerId, expenseTitle and amount (out/in) are required",
       });
     }
 
@@ -91,7 +90,6 @@ export const createStaffExpense = async (req: Request, res: Response) => {
       });
     }
 
-    // optional: prevent 0/negative
     if (parsedOut !== null && parsedOut <= 0) {
       return res.status(400).json({
         success: false,
@@ -136,9 +134,7 @@ export const createStaffExpense = async (req: Request, res: Response) => {
     }
 
     /* ================= CREATE STAFF EXPENSE ================= */
-    const staffExpense = await prisma.staffExpense.create({
-      data,
-    });
+    const staffExpense = await prisma.staffExpense.create({ data });
 
     /* ================= CREATE SITE EXPENSE (ONLY FOR OUT) ================= */
     if (parsedOut && siteId) {
@@ -150,6 +146,9 @@ export const createStaffExpense = async (req: Request, res: Response) => {
           summary: summary || expenseTitle,
           paymentDetails: staffLedger.name,
           amount: parsedOut,
+
+          // ✅ FIX: use relation connect (NOT staffExpenseId field)
+          staffExpense: { connect: { id: staffExpense.id } },
         },
       });
     }
@@ -170,7 +169,7 @@ export const createStaffExpense = async (req: Request, res: Response) => {
 
 /* ======================================================
    GET STAFF LEDGER ENTRIES
-   ====================================================== */
+====================================================== */
 export const getStaffLedgerEntries = async (req: Request, res: Response) => {
   try {
     const { staffLedgerId } = req.query;
@@ -205,8 +204,8 @@ export const getStaffLedgerEntries = async (req: Request, res: Response) => {
 
 /* ======================================================
    UPDATE STAFF EXPENSE / RECEIPT
-   (✅ NOW ALSO SYNC SiteExpense if it exists)
-   ====================================================== */
+   (Sync SiteExpense if it exists)
+====================================================== */
 export const updateStaffExpense = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -271,7 +270,6 @@ export const updateStaffExpense = async (req: Request, res: Response) => {
       });
     }
 
-    // optional: prevent 0/negative
     if (parsedOut !== null && parsedOut <= 0) {
       return res.status(400).json({
         success: false,
@@ -287,15 +285,17 @@ export const updateStaffExpense = async (req: Request, res: Response) => {
 
     const finalDate = expenseDate ? new Date(expenseDate) : existing.expenseDate;
 
-    // ✅ ledger name used in SiteExpense.paymentDetails
     const ledgerName = await getLedgerName(existing.staffLedgerId);
 
-    // ✅ find old SiteExpense row (if old entry was OUT + had site)
-    let oldSiteExpense: any = null;
-    const oldOut = existing.outAmount != null ? Number(existing.outAmount) : null;
+    // ✅ BEST: first try direct link by staffExpenseId (new schema)
+    let mirror = await prisma.siteExpense.findFirst({
+      where: { staffExpenseId: id },
+    });
 
-    if (oldOut && existing.siteId && ledgerName) {
-      oldSiteExpense = await findMatchingSiteExpense({
+    // fallback legacy matching (old records)
+    const oldOut = existing.outAmount != null ? Number(existing.outAmount) : null;
+    if (!mirror && oldOut && existing.siteId && ledgerName) {
+      mirror = await findMatchingSiteExpense({
         siteId: existing.siteId,
         expenseDate: existing.expenseDate,
         expenseTitle: existing.expenseTitle,
@@ -313,74 +313,53 @@ export const updateStaffExpense = async (req: Request, res: Response) => {
       inAmount: parsedIn,
     };
 
-    // ✅ siteId rules
-    if (siteId) {
-      data.site = { connect: { id: siteId } };
-    } else {
-      data.site = { disconnect: true };
-    }
+    if (siteId) data.site = { connect: { id: siteId } };
+    else data.site = { disconnect: true };
 
-    // ✅ update StaffExpense
     const updated = await prisma.staffExpense.update({
       where: { id },
       data,
     });
 
-    /* ======================================================
-       ✅ SYNC SITE EXPENSE NOW
-       - only OUT entries are mirrored in SiteExpense table
-       ====================================================== */
+    /* ================= SYNC SITE EXPENSE ================= */
     const newOut = parsedOut;
     const newSiteId = siteId || null;
 
-    // Case A: Now it is OUT and has site -> update/create mirror
     if (newOut && newSiteId) {
-      if (oldSiteExpense) {
-        // ✅ update existing mirror row
+      if (mirror) {
         await prisma.siteExpense.update({
-          where: { id: oldSiteExpense.id },
+          where: { id: mirror.id },
           data: {
             siteId: newSiteId,
             expenseDate: finalDate,
             expenseTitle,
             summary: (summary || expenseTitle) as string,
-            paymentDetails: ledgerName || oldSiteExpense.paymentDetails,
+            paymentDetails: ledgerName || mirror.paymentDetails || "",
             amount: newOut,
-            // ensure active
             isDeleted: false,
             deletedAt: null,
             deletedBy: null,
           },
         });
       } else {
-        // maybe mirror row exists but amount/title mismatch -> try find by new fields
-        const maybe = await findMatchingSiteExpense({
-          siteId: newSiteId,
-          expenseDate: finalDate,
-          expenseTitle,
-          paymentDetails: ledgerName,
-          amount: newOut,
-        });
+        await prisma.siteExpense.create({
+          data: {
+            site: { connect: { id: newSiteId } },
+            expenseDate: finalDate,
+            expenseTitle,
+            summary: summary || expenseTitle,
+            paymentDetails: ledgerName,
+            amount: newOut,
 
-        if (!maybe) {
-          // ✅ create new mirror row
-          await prisma.siteExpense.create({
-            data: {
-              site: { connect: { id: newSiteId } },
-              expenseDate: finalDate,
-              expenseTitle,
-              summary: summary || expenseTitle,
-              paymentDetails: ledgerName,
-              amount: newOut,
-            },
-          });
-        }
+            // ✅ FIX: relation connect
+            staffExpense: { connect: { id } },
+          },
+        });
       }
     } else {
-      // Case B: Now not OUT or no site -> soft delete old mirror if existed
-      if (oldSiteExpense) {
+      if (mirror) {
         await prisma.siteExpense.update({
-          where: { id: oldSiteExpense.id },
+          where: { id: mirror.id },
           data: {
             isDeleted: true,
             deletedAt: new Date(),

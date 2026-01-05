@@ -35,6 +35,8 @@ router.get("/", async (_req, res) => {
         siteName: site.siteName,
         tenderNo: site.tenderNo,
         sdAmount: site.sdAmount,
+  // ✅ ADD THIS (VERY IMPORTANT)
+    departmentId: site.departmentId,
 
         department: site.department,
         estimates: site.estimate,   // 🔥 IMPORTANT (used in Edit)

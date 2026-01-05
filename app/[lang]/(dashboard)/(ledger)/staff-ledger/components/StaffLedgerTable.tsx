@@ -12,8 +12,6 @@ import StaffAmountReceive from "./StaffAmountReceive";
 import EditStaffLedger from "./EditStaffLedger";
 import { StaffExpense } from "./types";
 import { exportStaffLedgerToExcel, exportStaffLedgerToPDF } from "./StaffLedgerExp";
-
-// ✅ NEW import helper
 import { importStaffLedgerExcel } from "./StaffLedgerImport";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -45,16 +43,12 @@ export default function StaffLedgerTable() {
   const [editRow, setEditRow] = useState<StaffExpense | null>(null);
 
   const [showExport, setShowExport] = useState(false);
-
-  // ✅ Export dropdown close on outside click
   const exportWrapRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ IMPORT STATES (ONLY ADDITION)
   const [openImportGuide, setOpenImportGuide] = useState(false);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-    // ✅ Hover/Active row highlight (NEW)
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
 
@@ -65,20 +59,29 @@ export default function StaffLedgerTable() {
 
   const fetchStaffLedgers = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/api/ledgers`, {
-        credentials: "include",
+      const res = await fetch(`${BASE_URL}/api/ledgers?_ts=${Date.now()}`, {
+        cache: "no-store",
+        // credentials: "include", // (optional) keep if you need cookie auth
       });
+
       const json = await res.json();
 
-      const filtered =
-        json?.data?.filter(
-          (l: Ledger) =>
-            l.ledgerType?.name?.toLowerCase().includes("staff") ||
-            l.ledgerType?.name?.toLowerCase().includes("supervisor")
-        ) ?? [];
+      const list: Ledger[] = Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json)
+        ? json
+        : [];
 
-      setStaffLedgers(filtered);
-    } catch {
+      // original filter
+      const filtered =
+        list.filter((l) => {
+          const t = l.ledgerType?.name?.toLowerCase() || "";
+          return t.includes("staff") || t.includes("supervisor");
+        }) ?? [];
+
+      // ✅ FIX: fallback - if filter returns empty, show all ledgers (so datalist never blank)
+      setStaffLedgers(filtered.length ? filtered : list);
+    } catch (e) {
       setStaffLedgers([]);
     }
   };
@@ -95,11 +98,12 @@ export default function StaffLedgerTable() {
   const fetchEntries = async (staffLedgerId: string) => {
     try {
       setLoading(true);
-      const res = await fetch(`${BASE_URL}/api/staff-expense?staffLedgerId=${staffLedgerId}`, {
-        credentials: "include",
-      });
+      const res = await fetch(
+        `${BASE_URL}/api/staff-expense?staffLedgerId=${staffLedgerId}&_ts=${Date.now()}`,
+        { cache: "no-store" }
+      );
       const json = await res.json();
-      setEntries(json?.data ?? []);
+      setEntries(Array.isArray(json?.data) ? json.data : []);
     } catch {
       setEntries([]);
     } finally {
@@ -107,8 +111,14 @@ export default function StaffLedgerTable() {
     }
   };
 
-  /* ================= STAFF NAME LIST ================= */
-  const staffNameList = useMemo(() => staffLedgers.map((l) => l.name), [staffLedgers]);
+  /* ================= STAFF NAME LIST (DEDUP) ================= */
+  const staffNameList = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of staffLedgers) {
+      if (l?.name) set.add(l.name);
+    }
+    return Array.from(set);
+  }, [staffLedgers]);
 
   /* ================= RUNNING BALANCE ================= */
   const rowsWithBalance = useMemo(() => {
@@ -142,7 +152,6 @@ export default function StaffLedgerTable() {
     const handlePointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
-
       if (exportWrapRef.current && !exportWrapRef.current.contains(target)) {
         setShowExport(false);
       }
@@ -161,7 +170,7 @@ export default function StaffLedgerTable() {
     };
   }, [showExport]);
 
-  /* ================= IMPORT HANDLER (ONLY ADDITION) ================= */
+  /* ================= IMPORT HANDLER ================= */
   const runImport = async (file: File) => {
     if (!selectedLedger?.id) return;
 
@@ -177,13 +186,9 @@ export default function StaffLedgerTable() {
         file,
         staffLedgerId: selectedLedger.id,
         baseUrl: BASE_URL,
-        onProgress: (done, total) => {
-          // (optional) avoid too many toasts; keep silent
-          // you can add a progress UI later if needed
-        },
+        onProgress: () => {},
       });
 
-      // refresh table after import
       await fetchEntries(selectedLedger.id);
 
       if (result.failCount === 0) {
@@ -194,7 +199,7 @@ export default function StaffLedgerTable() {
       } else {
         toast({
           title: "⚠️ Import completed with errors",
-          description: `Success: ${result.successCount}, Failed: ${result.failCount} (check console for error rows)`,
+          description: `Success: ${result.successCount}, Failed: ${result.failCount}`,
         });
         console.log("IMPORT ERRORS:", result.errors);
       }
@@ -208,7 +213,6 @@ export default function StaffLedgerTable() {
     }
   };
 
-  /* ================= UI ================= */
   return (
     <>
       <Card className="p-4 md:p-6 border rounded-xl bg-card">
@@ -217,7 +221,6 @@ export default function StaffLedgerTable() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* ===== Search + Buttons ===== */}
           <div className="flex flex-col md:flex-row gap-4">
             <div className="w-full md:w-1/3">
               <Input
@@ -226,8 +229,12 @@ export default function StaffLedgerTable() {
                 onChange={(e) => {
                   const val = e.target.value;
                   setSearch(val);
-                  const ledger = staffLedgers.find((l) => l.name === val);
-                  setSelectedLedger(ledger || null);
+
+                  const needle = val.trim().toLowerCase();
+                  const ledger =
+                    staffLedgers.find((l) => (l.name || "").trim().toLowerCase() === needle) || null;
+
+                  setSelectedLedger(ledger);
                 }}
                 list="staff-options"
               />
@@ -260,19 +267,17 @@ export default function StaffLedgerTable() {
                 Amount Received
               </Button>
 
-              {/* ✅ IMPORT BUTTON (ONLY ADDITION) */}
               <Button
                 variant="outline"
                 disabled={!selectedLedger || importing}
                 onClick={() => {
                   setShowExport(false);
-                  setOpenImportGuide(true); // guideline first
+                  setOpenImportGuide(true);
                 }}
               >
                 {importing ? "Importing..." : "Import Excel"}
               </Button>
 
-              {/* hidden file input */}
               <input
                 ref={fileRef}
                 type="file"
@@ -280,14 +285,12 @@ export default function StaffLedgerTable() {
                 className="hidden"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
-                  // allow re-upload same file again
                   e.target.value = "";
                   if (!file) return;
                   await runImport(file);
                 }}
               />
 
-              {/* ✅ Export wrapper ref: dropdown closes on outside click */}
               <div ref={exportWrapRef} className="relative">
                 <Button variant="outline" disabled={!selectedLedger} onClick={() => setShowExport(!showExport)}>
                   Export
@@ -319,7 +322,6 @@ export default function StaffLedgerTable() {
             </div>
           </div>
 
-          {/* ===== STAFF INFO ===== */}
           {selectedLedger && (
             <div className="grid md:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted">
               <div>
@@ -337,7 +339,6 @@ export default function StaffLedgerTable() {
             </div>
           )}
 
-          {/* ===== TABLE ===== */}
           <div style={{ overflowX: "auto", width: "100%" }}>
             <table className="w-full text-sm" style={{ minWidth: 1200 }}>
               <thead className="bg-default-100">
@@ -376,15 +377,11 @@ export default function StaffLedgerTable() {
                       aria-selected={isActive}
                       className={[
                         "border-t cursor-pointer transition-colors duration-150",
-                        // ✅ default hover (even if not selected)
                         "hover:bg-primary/5",
-                        // ✅ hovered row (slightly stronger than hover)
                         isHover ? "bg-primary/7" : "",
-                        // ✅ selected row (strongest)
                         isActive ? "bg-primary/12" : "",
                       ].join(" ")}
                       style={{
-                        // ✅ left bar highlight (hover + selected)
                         boxShadow: isActive
                           ? "inset 4px 0 0 hsl(var(--primary))"
                           : isHover
@@ -392,9 +389,7 @@ export default function StaffLedgerTable() {
                           : undefined,
                       }}
                     >
-                      <td className="p-3">
-                        {new Date(row.expenseDate).toLocaleDateString()}
-                      </td>
+                      <td className="p-3">{new Date(row.expenseDate).toLocaleDateString()}</td>
                       <td className="p-3">{row.site?.siteName || "—"}</td>
                       <td className="p-3">{row.expenseTitle}</td>
                       <td className="p-3">{row.summary || "—"}</td>
@@ -403,12 +398,11 @@ export default function StaffLedgerTable() {
                       <td className="p-3 text-red-500">{row.outAmount ?? ""}</td>
                       <td className="p-3 font-semibold">{row.balance}</td>
 
-                      {/* ✅ prevent row click when clicking icons */}
                       <td className="p-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
                         <Pencil
                           className="h-4 w-4 cursor-pointer text-blue-500"
                           onClick={() => {
-                            setActiveRowId(row.id); // ✅ keep row selected
+                            setActiveRowId(row.id);
                             setEditRow(row);
                           }}
                         />
@@ -417,15 +411,12 @@ export default function StaffLedgerTable() {
                     </tr>
                   );
                 })}
-
-
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
 
-      {/* ===== IMPORT GUIDELINE POPUP (ONLY ADDITION) ===== */}
       <Dialog open={openImportGuide} onOpenChange={setOpenImportGuide}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -454,7 +445,6 @@ export default function StaffLedgerTable() {
             <Button
               onClick={() => {
                 setOpenImportGuide(false);
-                // open file picker
                 setTimeout(() => fileRef.current?.click(), 0);
               }}
               disabled={importing || !selectedLedger}
@@ -465,7 +455,6 @@ export default function StaffLedgerTable() {
         </DialogContent>
       </Dialog>
 
-      {/* ===== POPUPS ===== */}
       <Dialog open={openForm === "exp"} onOpenChange={() => setOpenForm(null)}>
         <DialogContent className="max-w-xl">
           <DialogHeader>

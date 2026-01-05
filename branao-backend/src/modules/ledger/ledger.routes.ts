@@ -1,9 +1,5 @@
 import express from "express";
-import {
-  createLedger,
-  getLedgers,
-  deleteLedger,
-} from "./ledger.controller";
+import { createLedger, getLedgers, deleteLedger } from "./ledger.controller";
 
 const router = express.Router();
 

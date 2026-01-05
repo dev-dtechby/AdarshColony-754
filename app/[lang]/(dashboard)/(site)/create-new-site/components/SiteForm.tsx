@@ -86,31 +86,35 @@ export default function SiteForm() {
     setEstimate((prev) => ({ ...prev, [key]: value }));
   };
 
-  const buildFormData = () => {
-    const fd = new FormData();
+const buildFormData = () => {
+  const fd = new FormData();
 
-    fd.append("siteName", siteName);
-    fd.append("tenderNo", tenderNo);
-    fd.append("sdAmount", sdAmount);
-    if (departmentId) fd.append("departmentId", departmentId);
+  fd.append("siteName", siteName);
+  fd.append("tenderNo", tenderNo);
+  fd.append("sdAmount", sdAmount);
 
-    fd.append("cement", estimate["Cement"] || "");
-    fd.append("metal", estimate["Metal"] || "");
-    fd.append("sand", estimate["Sand"] || "");
-    fd.append("labour", estimate["Labour"] || "");
-    fd.append("royalty", estimate["Royalty"] || "");
-    fd.append("overhead", estimate["Over Head"] || "");
-    fd.append("lead", estimate["Lead"] || "");
-    fd.append("dressing", estimate["Dressing"] || "");
-    fd.append("waterCompaction", estimate["Water & Compaction"] || "");
-    fd.append("loading", estimate["Loading"] || "");
+  // ✅ IMPORTANT FIX: Always append departmentId (trimmed)
+  // (validation already ensures it's selected)
+  fd.append("departmentId", (departmentId || "").trim());
 
-    if (sdFile) fd.append("sdFile", sdFile);
-    if (workOrderFile) fd.append("workOrderFile", workOrderFile);
-    tenderDocs.forEach((f) => fd.append("tenderDocs", f));
+  fd.append("cement", estimate["Cement"] || "");
+  fd.append("metal", estimate["Metal"] || "");
+  fd.append("sand", estimate["Sand"] || "");
+  fd.append("labour", estimate["Labour"] || "");
+  fd.append("royalty", estimate["Royalty"] || "");
+  fd.append("overhead", estimate["Over Head"] || "");
+  fd.append("lead", estimate["Lead"] || "");
+  fd.append("dressing", estimate["Dressing"] || "");
+  fd.append("waterCompaction", estimate["Water & Compaction"] || "");
+  fd.append("loading", estimate["Loading"] || "");
 
-    return fd;
-  };
+  if (sdFile) fd.append("sdFile", sdFile);
+  if (workOrderFile) fd.append("workOrderFile", workOrderFile);
+  tenderDocs.forEach((f) => fd.append("tenderDocs", f));
+
+  return fd;
+};
+
 
   /* ================= RESET ================= */
   const resetForm = () => {
@@ -129,30 +133,40 @@ export default function SiteForm() {
   };
 
   /* ================= SAVE ================= */
-  const handleSave = async () => {
-    if (!siteName.trim()) {
-      toast({ title: "❌ Site Name is required" });
-      return;
-    }
+const handleSave = async () => {
+  if (!siteName.trim()) {
+    toast({ title: "❌ Site Name is required" });
+    return;
+  }
 
-    try {
-      setLoading(true);
-      const res = await fetch(SITE_API, {
-        method: "POST",
-        body: buildFormData(),
-      });
+  // ✅ ADD THIS
+  if (!departmentId) {
+    toast({
+      title: "❌ Department is required",
+      description: "Please select department before saving site.",
+    });
+    return;
+  }
 
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || "Failed");
+  try {
+    setLoading(true);
+    const res = await fetch(SITE_API, {
+      method: "POST",
+      body: buildFormData(),
+    });
 
-      toast({ title: "✅ Site Created Successfully" });
-      resetForm();
-    } catch (e: any) {
-      toast({ title: "❌ Error", description: e.message });
-    } finally {
-      setLoading(false);
-    }
-  };
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || "Failed");
+
+    toast({ title: "✅ Site Created Successfully" });
+    resetForm();
+  } catch (e: any) {
+    toast({ title: "❌ Error", description: e.message });
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   /* ================= UI ================= */
   return (

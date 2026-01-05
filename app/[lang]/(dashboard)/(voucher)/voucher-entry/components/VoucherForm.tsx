@@ -1,32 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { useEffect, useMemo, useState } from "react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { CalendarIcon, Upload } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
 export default function VoucherForm() {
   const { toast } = useToast();
 
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [sites, setSites] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
 
   const [form, setForm] = useState<any>({
     siteId: "",
@@ -52,12 +43,66 @@ export default function VoucherForm() {
     chequeAmt: "",
   });
 
-  /* ================= FETCH SITES (WITH DEPARTMENT) ================= */
+  /* ================= FETCH SITES ================= */
   useEffect(() => {
-    fetch(`${BASE_URL}/api/sites`)
+    fetch(`${BASE_URL}/api/sites?_ts=${Date.now()}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d) => setSites(d.data || []));
+      .then((d) => {
+        const list = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+        setSites(list);
+      })
+      .catch(() => setSites([]));
   }, []);
+
+  /* ================= FETCH DEPARTMENTS ================= */
+  useEffect(() => {
+    fetch(`${BASE_URL}/api/departments?_ts=${Date.now()}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+        setDepartments(list);
+      })
+      .catch(() => setDepartments([]));
+  }, []);
+
+  /* ================= DEPT MAP ================= */
+  const deptMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const dep of departments) {
+      if (dep?.id) m.set(dep.id, dep.name || "");
+    }
+    return m;
+  }, [departments]);
+
+  /* ================= AUTO RESOLVE DEPARTMENT =================
+     ✅ FIX: If deptMap loads after site selection, this will still fill dept name.
+  ============================================================ */
+  useEffect(() => {
+    if (!form.siteId) {
+      // clear
+      setForm((p: any) => {
+        if (!p.departmentId && !p.departmentName) return p;
+        return { ...p, departmentId: "", departmentName: "" };
+      });
+      return;
+    }
+
+    const selectedSite = sites.find((s) => s.id === form.siteId);
+
+    const depIdFromObj = selectedSite?.department?.id || "";
+    const depNameFromObj = selectedSite?.department?.name || "";
+
+    const depIdFromField = selectedSite?.departmentId || "";
+
+    const finalDeptId = depIdFromObj || depIdFromField || "";
+    const finalDeptName =
+      depNameFromObj || (finalDeptId ? deptMap.get(finalDeptId) : "") || "";
+
+    setForm((p: any) => {
+      if (p.departmentId === finalDeptId && p.departmentName === finalDeptName) return p;
+      return { ...p, departmentId: finalDeptId, departmentName: finalDeptName };
+    });
+  }, [form.siteId, sites, deptMap]);
 
   /* ================= HANDLERS ================= */
   const handleChange = (key: string, value: any) => {
@@ -65,13 +110,12 @@ export default function VoucherForm() {
   };
 
   const handleSiteChange = (siteId: string) => {
-    const selectedSite = sites.find((s) => s.id === siteId);
-
+    // ✅ only set siteId here; department resolved by useEffect above
     setForm((p: any) => ({
       ...p,
       siteId,
-      departmentId: selectedSite?.department?.id || "",
-      departmentName: selectedSite?.department?.name || "",
+      departmentId: "",
+      departmentName: "",
     }));
   };
 
@@ -106,7 +150,7 @@ export default function VoucherForm() {
     if (!form.siteId || !form.departmentId || !form.chequeAmt) {
       toast({
         title: "Validation Error",
-        description: "Site and Cheque Amt are required",
+        description: "Site, Department and Cheque Amt are required",
       });
       return;
     }
@@ -121,28 +165,22 @@ export default function VoucherForm() {
     });
 
     if (res.ok) {
-      toast({
-        title: "Success",
-        description: "Voucher saved successfully",
-      });
+      toast({ title: "Success", description: "Voucher saved successfully" });
       resetForm();
+      return;
     }
+
+    toast({ title: "Error", description: "Failed to save voucher" });
   };
 
   return (
     <Card className="p-6 shadow-sm border rounded-xl bg-card">
       <CardHeader>
-        <CardTitle className="text-xl font-semibold">
-          Voucher Entry Form
-        </CardTitle>
+        <CardTitle className="text-xl font-semibold">Voucher Entry Form</CardTitle>
       </CardHeader>
 
       <CardContent className="space-y-10">
-
-        {/* ================= TOP ROW ================= */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-          {/* Voucher Date */}
           <div className="space-y-1">
             <Label>Voucher Date</Label>
             <Popover>
@@ -158,7 +196,6 @@ export default function VoucherForm() {
             </Popover>
           </div>
 
-          {/* Site */}
           <div className="space-y-1">
             <Label>Site</Label>
             <select
@@ -175,7 +212,6 @@ export default function VoucherForm() {
             </select>
           </div>
 
-          {/* Department (AUTO / READ ONLY) */}
           <div className="space-y-1">
             <Label>Department</Label>
             <Input
@@ -187,7 +223,6 @@ export default function VoucherForm() {
           </div>
         </div>
 
-        {/* ================= FIELDS GRID ================= */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[
             ["Gross Amt", "grossAmt"],
@@ -208,19 +243,18 @@ export default function VoucherForm() {
             ["Deduction Amt", "deductionAmt"],
             ["Cheque Amt (Actual Received)", "chequeAmt"],
           ].map(([label, key]) => (
-            <div key={key} className="grid grid-cols-2 gap-3 items-center">
+            <div key={key as string} className="grid grid-cols-2 gap-3 items-center">
               <Label className="font-medium">{label}</Label>
               <Input
                 type="number"
                 value={form[key]}
-                onChange={(e) => handleChange(key, e.target.value)}
+                onChange={(e) => handleChange(key as string, e.target.value)}
                 placeholder={`Enter ${label}`}
               />
             </div>
           ))}
         </div>
 
-        {/* ================= UPLOAD ================= */}
         <div className="space-y-1">
           <Label>Upload Voucher</Label>
           <Button variant="outline" className="w-full flex gap-2 justify-center">
@@ -228,7 +262,6 @@ export default function VoucherForm() {
           </Button>
         </div>
 
-        {/* ================= ACTION BUTTONS ================= */}
         <div className="flex flex-wrap gap-4 pt-6">
           <Button className="px-10" onClick={handleSave}>
             Save
@@ -237,7 +270,6 @@ export default function VoucherForm() {
             Reset
           </Button>
         </div>
-
       </CardContent>
     </Card>
   );

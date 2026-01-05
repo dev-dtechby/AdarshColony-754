@@ -16,30 +16,53 @@ async function uploadToCloudinary(file: Express.Multer.File) {
 }
 
 /* =====================================================
+   SMALL HELPERS (SAFE NORMALIZE)
+===================================================== */
+function toNullIfEmpty(val: any): string | null {
+  if (val === undefined || val === null) return null;
+  const s = String(val).trim();
+  if (!s || s.toLowerCase() === "undefined" || s.toLowerCase() === "null") return null;
+  return s;
+}
+
+function toNumberOrNull(val: any): number | null {
+  if (val === undefined || val === null || val === "") return null;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toNumberOrUndefined(val: any): number | undefined {
+  if (val === undefined) return undefined;
+  if (val === null || val === "") return undefined;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/* =====================================================
    CREATE SITE
 ===================================================== */
 export async function createSite(data: any, files: any) {
   const site = await prisma.site.create({
     data: {
       siteName: data.siteName,
-      tenderNo: data.tenderNo || null,
-      sdAmount: data.sdAmount ? Number(data.sdAmount) : null,
-      departmentId: data.departmentId || null,
+      tenderNo: toNullIfEmpty(data.tenderNo),
+      sdAmount: data.sdAmount ? toNumberOrNull(data.sdAmount) : null,
+
+      // ✅ FIX: departmentId safe trim (existing behavior same: allow null)
+      departmentId: toNullIfEmpty(data.departmentId),
 
       estimate: {
         create: {
-          cement: data.cement ? Number(data.cement) : null,
-          metal: data.metal ? Number(data.metal) : null,
-          sand: data.sand ? Number(data.sand) : null,
-          labour: data.labour ? Number(data.labour) : null,
-          royalty: data.royalty ? Number(data.royalty) : null,
-          overhead: data.overhead ? Number(data.overhead) : null,
-          lead: data.lead ? Number(data.lead) : null,
-          dressing: data.dressing ? Number(data.dressing) : null,
-          waterCompaction: data.waterCompaction
-            ? Number(data.waterCompaction)
-            : null,
-          loading: data.loading ? Number(data.loading) : null,
+          cement: toNumberOrNull(data.cement),
+          metal: toNumberOrNull(data.metal),
+          sand: toNumberOrNull(data.sand),
+          labour: toNumberOrNull(data.labour),
+          royalty: toNumberOrNull(data.royalty),
+          overhead: toNumberOrNull(data.overhead),
+          lead: toNumberOrNull(data.lead),
+          dressing: toNumberOrNull(data.dressing),
+          waterCompaction: toNumberOrNull(data.waterCompaction),
+          loading: toNumberOrNull(data.loading),
         },
       },
     },
@@ -90,34 +113,24 @@ export async function updateSite(id: string, data: any, files: any) {
     where: { id },
     data: {
       siteName: data.siteName,
-      tenderNo: data.tenderNo || null,
-      sdAmount: data.sdAmount ? Number(data.sdAmount) : null,
-      departmentId: data.departmentId || null,
+      tenderNo: toNullIfEmpty(data.tenderNo),
+      sdAmount: data.sdAmount ? toNumberOrNull(data.sdAmount) : null,
+
+      // ✅ FIX: departmentId safe trim (existing behavior same: allow null)
+      departmentId: toNullIfEmpty(data.departmentId),
 
       estimate: {
         update: {
-          cement:
-            data.cement !== undefined ? Number(data.cement) : undefined,
-          metal:
-            data.metal !== undefined ? Number(data.metal) : undefined,
-          sand:
-            data.sand !== undefined ? Number(data.sand) : undefined,
-          labour:
-            data.labour !== undefined ? Number(data.labour) : undefined,
-          royalty:
-            data.royalty !== undefined ? Number(data.royalty) : undefined,
-          overhead:
-            data.overhead !== undefined ? Number(data.overhead) : undefined,
-          lead:
-            data.lead !== undefined ? Number(data.lead) : undefined,
-          dressing:
-            data.dressing !== undefined ? Number(data.dressing) : undefined,
-          waterCompaction:
-            data.waterCompaction !== undefined
-              ? Number(data.waterCompaction)
-              : undefined,
-          loading:
-            data.loading !== undefined ? Number(data.loading) : undefined,
+          cement: toNumberOrUndefined(data.cement),
+          metal: toNumberOrUndefined(data.metal),
+          sand: toNumberOrUndefined(data.sand),
+          labour: toNumberOrUndefined(data.labour),
+          royalty: toNumberOrUndefined(data.royalty),
+          overhead: toNumberOrUndefined(data.overhead),
+          lead: toNumberOrUndefined(data.lead),
+          dressing: toNumberOrUndefined(data.dressing),
+          waterCompaction: toNumberOrUndefined(data.waterCompaction),
+          loading: toNumberOrUndefined(data.loading),
         },
       },
     },
