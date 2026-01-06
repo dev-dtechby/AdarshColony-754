@@ -368,10 +368,10 @@ model MaterialSupplierLedger {
 
   entryDate    DateTime
   receiptNo    String?
-  parchiPhoto  String? // Cloudinary secureUrl
+  parchiPhoto  String? @db.Text // Cloudinary secureUrl
   otp          String? // if needed
   vehicleNo    String?
-  vehiclePhoto String? // Cloudinary secureUrl
+  vehiclePhoto String? @db.Text // Cloudinary secureUrl
 
   material String
   size     String?

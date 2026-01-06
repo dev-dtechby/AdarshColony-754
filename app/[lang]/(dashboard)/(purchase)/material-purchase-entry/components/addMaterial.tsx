@@ -18,6 +18,7 @@ import {
 interface Material {
   id: string;
   name: string;
+  isDeleted?: boolean;
 }
 
 /* ================= PROPS ================= */
@@ -26,8 +27,7 @@ interface Props {
 }
 
 /* ================= API ================= */
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 const API = `${BASE_URL}/api/material-master`;
 
 export default function AddMaterial({ onChanged }: Props) {
@@ -37,14 +37,17 @@ export default function AddMaterial({ onChanged }: Props) {
   const [list, setList] = useState<Material[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // ✅ Edit states
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // delete dialog states
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Material | null>(null);
 
+  /* ================= LOAD ================= */
   const load = async () => {
     try {
-      const res = await fetch(API, {
+      const res = await fetch(`${API}?_ts=${Date.now()}`, {
         credentials: "include",
         cache: "no-store",
       });
@@ -64,12 +67,17 @@ export default function AddMaterial({ onChanged }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ================= ADD ================= */
   const add = async () => {
     const val = name.trim();
-    if (!val) return;
+    if (!val) {
+      toast({ title: "⚠️ Required", description: "Material name is required" });
+      return;
+    }
 
     try {
       setLoading(true);
+
       const res = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -94,24 +102,31 @@ export default function AddMaterial({ onChanged }: Props) {
     }
   };
 
+  /* ================= START EDIT ================= */
   const startEdit = (m: Material) => {
     setEditingId(m.id);
     setName(m.name);
   };
 
+  /* ================= CANCEL EDIT ================= */
   const cancelEdit = () => {
     setEditingId(null);
     setName("");
   };
 
+  /* ================= UPDATE ================= */
   const update = async () => {
     if (!editingId) return;
 
     const val = name.trim();
-    if (!val) return;
+    if (!val) {
+      toast({ title: "⚠️ Required", description: "Material name is required" });
+      return;
+    }
 
     try {
       setLoading(true);
+
       const res = await fetch(`${API}/${editingId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -137,11 +152,13 @@ export default function AddMaterial({ onChanged }: Props) {
     }
   };
 
+  /* ================= SOFT DELETE ================= */
   const confirmDelete = async () => {
     if (!selected) return;
 
     try {
       setLoading(true);
+
       const res = await fetch(`${API}/${selected.id}`, {
         method: "DELETE",
         credentials: "include",
@@ -172,6 +189,7 @@ export default function AddMaterial({ onChanged }: Props) {
     }
   };
 
+  /* ================= UI ================= */
   return (
     <>
       <Card className="p-6 space-y-6">
@@ -189,6 +207,7 @@ export default function AddMaterial({ onChanged }: Props) {
                 editingId ? update() : add();
               }
             }}
+            disabled={loading}
           />
 
           {!editingId ? (
@@ -212,7 +231,7 @@ export default function AddMaterial({ onChanged }: Props) {
           )}
         </div>
 
-        {/* LIST */}
+        {/* LIST (✅ Scrollbar Added like DepartmentMaster) */}
         <div className="border rounded-md overflow-hidden">
           <div className="max-h-[320px] overflow-y-auto">
             <table className="w-full text-sm">
@@ -224,7 +243,7 @@ export default function AddMaterial({ onChanged }: Props) {
               </thead>
 
               <tbody>
-                {list.length === 0 ? (
+                {list.length === 0 && (
                   <tr>
                     <td
                       colSpan={2}
@@ -233,39 +252,39 @@ export default function AddMaterial({ onChanged }: Props) {
                       No materials added yet
                     </td>
                   </tr>
-                ) : (
-                  list.map((m) => (
-                    <tr key={m.id} className="border-t">
-                      <td className="p-2">{m.name}</td>
-                      <td className="p-2">
-                        <div className="flex justify-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => startEdit(m)}
-                            disabled={loading}
-                          >
-                            Edit
-                          </Button>
-
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setSelected(m);
-                              setOpen(true);
-                            }}
-                            disabled={loading}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
                 )}
+
+                {list.map((m) => (
+                  <tr key={m.id} className="border-t">
+                    <td className="p-2">{m.name}</td>
+                    <td className="p-2">
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => startEdit(m)}
+                          disabled={loading}
+                        >
+                          Edit
+                        </Button>
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelected(m);
+                            setOpen(true);
+                          }}
+                          disabled={loading}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

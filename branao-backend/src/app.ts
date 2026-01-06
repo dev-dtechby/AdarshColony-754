@@ -18,6 +18,7 @@ import staffExpenseRoutes from "./modules/staff-expense/staff-expense.routes";
 import materialMasterRoutes from "./modules/material-master/material-master.routes";
 import materialSupplierRoutes from "./modules/material-supplier/material-supplier.routes";
 import siteTransactionRoutes from "./modules/site-transaction/site-transaction.routes";
+import materialSupplierLedgerRoutes from "./modules/material-supplier-ledger/material-supplier-ledger.routes";
 
 const app = express();
 
@@ -96,6 +97,7 @@ app.use("/api/staff-expense", staffExpenseRoutes);
 app.use("/api/material-master", materialMasterRoutes);
 app.use("/api/material-suppliers", materialSupplierRoutes);
 app.use("/api/site-transactions", siteTransactionRoutes);
+app.use("/api/material-supplier-ledger", materialSupplierLedgerRoutes);
 
 // ====================
 // 404 HANDLER

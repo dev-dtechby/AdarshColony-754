@@ -16,7 +16,11 @@ import {
   Save,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import AddMaterial from "./addMaterial";
@@ -26,6 +30,9 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 const SUPPLIER_API = `${BASE_URL}/api/material-suppliers`;
 const SITE_API = `${BASE_URL}/api/sites`;
 const MATERIAL_API = `${BASE_URL}/api/material-master`;
+
+// ✅ bulk save endpoint
+const LEDGER_BULK_API = `${BASE_URL}/api/material-supplier-ledger/bulk`;
 
 /* ================= TYPES ================= */
 type Supplier = { id: string; name: string; contactNo?: string | null };
@@ -58,11 +65,7 @@ const isPositiveNumber = (v: string) => {
   return Number.isFinite(x) && x > 0;
 };
 
-export default function MaterialForm({
-  onCancel,
-}: {
-  onCancel?: () => void;
-}) {
+export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
   const [date, setDate] = useState<Date | undefined>(new Date());
 
   /* ================= DROPDOWN DATA ================= */
@@ -155,6 +158,12 @@ export default function MaterialForm({
     loadMaterials();
   }, []);
 
+  const materialNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const x of materials) m.set(x.id, x.name);
+    return m;
+  }, [materials]);
+
   /* ================= ROW HELPERS ================= */
   const updateRow = (id: string, patch: Partial<EntryRow>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -180,7 +189,9 @@ export default function MaterialForm({
   };
 
   const removeRow = (id: string) => {
-    setRows((prev) => (prev.length === 1 ? prev : prev.filter((r) => r.id !== id)));
+    setRows((prev) =>
+      prev.length === 1 ? prev : prev.filter((r) => r.id !== id)
+    );
   };
 
   const resetAll = () => {
@@ -253,30 +264,80 @@ export default function MaterialForm({
     return rows.every(rowValid);
   }, [date, supplierId, siteId, rows]);
 
+  // ✅ Save to backend (multipart + files) — UI/flow unchanged
   const saveAll = async () => {
-    // connect backend later
-    console.log("SAVE", { date, supplierId, siteId, rows });
-    alert("Demo: Save triggered (connect backend next).");
-  };
+    if (!date || !supplierId || !siteId) {
+      alert("Please select Date, Supplier and Site.");
+      return;
+    }
+    if (!rows.length) {
+      alert("No rows to save.");
+      return;
+    }
+    if (!rows.every(rowValid)) {
+      alert("Please complete all rows (OTP verify required).");
+      return;
+    }
 
-  /* ================= LAYOUT NOTE =================
-     ✅ MOBILE: entire page scrolls
-     ✅ TABLE AREA: separately scrolls inside (when you reach it)
-     ✅ rows height reduced (excel-like)
-  ================================================= */
+    try {
+      const fd = new FormData();
+      fd.append("entryDate", date.toISOString());
+      fd.append("ledgerId", supplierId); // ✅ supplier ledger id
+      fd.append("siteId", siteId);
+
+      // rows payload (DB expects `material` as STRING)
+      const payloadRows = rows.map((r) => ({
+        rowKey: r.id,
+        vehicleNo: r.vehicleNo.trim(),
+        receiptNo: r.receiptNo.trim(),
+        otp: r.otp,
+        material: materialNameById.get(r.materialId) || r.materialId, // ✅ never empty
+        size: r.size?.trim() || null,
+        qty: r.qty, // ✅ keep as string; backend will Decimal parse safely
+        // rate UI me nahi hai; backend default rate=0
+      }));
+
+      fd.append("rows", JSON.stringify(payloadRows));
+
+      // files arrays (order must match rows order)
+      rows.forEach((r) => {
+        // rowValid ensures both exist, still keep safe:
+        if (!r.unloadingFile || !r.receiptFile) {
+          throw new Error("Missing files in one of the rows.");
+        }
+        fd.append("unloadingFiles", r.unloadingFile);
+        fd.append("receiptFiles", r.receiptFile);
+      });
+
+      const res = await fetch(LEDGER_BULK_API, {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || "Save failed");
+
+      alert(json?.message || "Saved successfully");
+      resetAll();
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || "Save failed");
+    }
+  };
 
   return (
     <div
       className="h-full w-full"
       style={{
         height: "100%",
-        overflow: "auto", // ✅ whole page scroll (mobile-friendly)
+        overflow: "auto",
         WebkitOverflowScrolling: "touch",
         overscrollBehavior: "contain",
       }}
     >
       <Card className="border rounded-xl overflow-hidden">
-        {/* ================= HEADER ================= */}
+        {/* HEADER */}
         <CardHeader className="pb-3 border-b bg-background/60 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -305,10 +366,9 @@ export default function MaterialForm({
         </CardHeader>
 
         <CardContent className="p-0">
-          {/* ================= TOP CONTROLS ================= */}
+          {/* TOP CONTROLS */}
           <div className="p-4 md:p-6 border-b">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* DATE */}
               <div className="space-y-1">
                 <Label>Date</Label>
                 <Popover>
@@ -329,7 +389,6 @@ export default function MaterialForm({
                 </Popover>
               </div>
 
-              {/* SUPPLIER */}
               <div className="space-y-1">
                 <Label>Material Supplier</Label>
                 <select
@@ -348,7 +407,6 @@ export default function MaterialForm({
                 </select>
               </div>
 
-              {/* SITE */}
               <div className="space-y-1">
                 <Label>Select Site</Label>
                 <select
@@ -369,20 +427,18 @@ export default function MaterialForm({
             </div>
           </div>
 
-          {/* ================= TABLE AREA (SEPARATE SCROLL) ================= */}
+          {/* TABLE AREA */}
           <div className="p-3 md:p-4">
             <div className="rounded-xl border bg-card/40 overflow-hidden">
-              {/* ✅ fixed-height scroll area for table (desktop+mobile both) */}
               <div
                 className="overflow-auto"
                 style={{
-                  maxHeight: "52vh", // ✅ table area scrolls
+                  maxHeight: "52vh",
                   scrollbarGutter: "stable",
                   WebkitOverflowScrolling: "touch",
                   overscrollBehavior: "contain",
                 }}
               >
-                {/* Horizontal scroll wrapper */}
                 <div style={{ overflowX: "auto" }}>
                   <div style={{ minWidth: 1200 }}>
                     <table className="w-full text-sm border-collapse">
@@ -464,9 +520,7 @@ export default function MaterialForm({
                                       OTP: <b>{r.otp}</b>
                                     </span>
                                   ) : (
-                                    <span className="text-muted-foreground">
-                                      Upload → OTP
-                                    </span>
+                                    <span className="text-muted-foreground">Upload → OTP</span>
                                   )}
                                 </div>
                               </td>
@@ -494,7 +548,9 @@ export default function MaterialForm({
                                 <Input
                                   placeholder="40mm"
                                   value={r.size}
-                                  onChange={(e) => updateRow(r.id, { size: e.target.value })}
+                                  onChange={(e) =>
+                                    updateRow(r.id, { size: e.target.value })
+                                  }
                                   className="h-8 w-28 text-sm"
                                 />
                               </td>
@@ -562,7 +618,11 @@ export default function MaterialForm({
                               </td>
 
                               <td className="px-2 py-2 align-top">
-                                <Input disabled value={r.otp} className="h-8 w-20 text-sm" />
+                                <Input
+                                  disabled
+                                  value={r.otp}
+                                  className="h-8 w-20 text-sm"
+                                />
                               </td>
 
                               <td className="px-2 py-2 align-top">
@@ -583,7 +643,10 @@ export default function MaterialForm({
 
                         {rows.length === 0 && (
                           <tr>
-                            <td colSpan={10} className="p-6 text-center text-muted-foreground">
+                            <td
+                              colSpan={10}
+                              className="p-6 text-center text-muted-foreground"
+                            >
                               No rows
                             </td>
                           </tr>
@@ -600,28 +663,21 @@ export default function MaterialForm({
             </div>
           </div>
 
-          {/* ================= FOOTER ACTIONS (SAVE / RESET / CANCEL) ================= */}
+          {/* FOOTER ACTIONS */}
           <div className="border-t bg-background/60 backdrop-blur p-3 md:p-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="text-xs text-muted-foreground">
-                Rows: <b>{rows.length}</b> • Ready: <b>{rows.filter(rowValid).length}</b>
+                Rows: <b>{rows.length}</b> • Ready:{" "}
+                <b>{rows.filter(rowValid).length}</b>
               </div>
 
               <div className="flex flex-wrap gap-2 justify-end">
-                <Button
-                  variant="outline"
-                  onClick={resetAll}
-                  className="gap-2"
-                >
+                <Button variant="outline" onClick={resetAll} className="gap-2">
                   <RefreshCcw className="h-4 w-4" />
                   Reset
                 </Button>
 
-                <Button
-                  onClick={saveAll}
-                  disabled={!canSave}
-                  className="gap-2"
-                >
+                <Button onClick={saveAll} disabled={!canSave} className="gap-2">
                   <Save className="h-4 w-4" />
                   Save
                 </Button>
@@ -639,7 +695,7 @@ export default function MaterialForm({
         </CardContent>
       </Card>
 
-      {/* ================= ADD MATERIAL MODAL ================= */}
+      {/* ADD MATERIAL MODAL */}
       <Dialog open={openAddMaterial} onOpenChange={setOpenAddMaterial}>
         <DialogContent
           className="
@@ -650,8 +706,14 @@ export default function MaterialForm({
         >
           <div className="h-full min-h-0 flex flex-col">
             <div className="shrink-0 px-4 md:px-6 py-4 border-b bg-background/60 backdrop-blur flex items-center justify-between">
-              <div className="text-base md:text-lg font-semibold">Material Master</div>
-              <Button size="sm" variant="outline" onClick={() => setOpenAddMaterial(false)}>
+              <div className="text-base md:text-lg font-semibold">
+                Material Master
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setOpenAddMaterial(false)}
+              >
                 Close
               </Button>
             </div>

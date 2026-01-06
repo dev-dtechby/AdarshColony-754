@@ -11,14 +11,17 @@ import {
 
 const router = express.Router();
 
+// ✅ list
 router.get("/", getMaterialMaster);
 router.get("/deleted", getDeletedMaterialMaster);
 
+// ✅ create / update
 router.post("/", createMaterialMaster);
 router.put("/:id", updateMaterialMaster);
 
-router.delete("/:id", deleteMaterialMaster);        // soft delete
+// ✅ delete / restore
+router.delete("/:id", deleteMaterialMaster); // soft delete
 router.post("/:id/restore", restoreMaterialMaster); // restore
-router.delete("/:id/hard", hardDeleteMaterialMaster);
+router.delete("/:id/hard", hardDeleteMaterialMaster); // hard delete
 
 export default router;
