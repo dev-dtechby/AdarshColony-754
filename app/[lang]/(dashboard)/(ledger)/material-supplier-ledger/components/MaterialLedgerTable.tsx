@@ -28,6 +28,9 @@ const SITE_API = `${BASE_URL}/api/sites`;
 const SUPPLIER_API = `${BASE_URL}/api/material-suppliers`;
 const LEDGER_API = `${BASE_URL}/api/material-supplier-ledger`;
 
+// ✅ Material Master API (as per your backend routes)
+const MATERIAL_MASTER_API = `${BASE_URL}/api/material-master`;
+
 /* ================= TYPES ================= */
 type Site = { id: string; siteName: string };
 
@@ -37,11 +40,14 @@ type Supplier = {
   contactNo?: string | null;
 };
 
+type MaterialMaster = {
+  id: string;
+  name: string;
+};
+
 type LedgerRow = {
   id: string;
   entryDate: string; // ISO
-
-  // ✅ IMPORTANT: backend generally returns siteId, not "site" include
   siteId?: string | null;
   site?: { id: string; siteName: string } | null;
 
@@ -85,10 +91,13 @@ function n(v: any) {
   return Number.isFinite(x) ? x : 0;
 }
 
+const cleanStr = (v: any) => String(v ?? "").trim();
+
 export default function MaterialLedgerTable() {
   /* ================= MASTER DATA ================= */
   const [sites, setSites] = useState<Site[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [materials, setMaterials] = useState<MaterialMaster[]>([]); // ✅ NEW
 
   /* ================= FILTERS ================= */
   const [supplierQuery, setSupplierQuery] = useState("");
@@ -118,23 +127,20 @@ export default function MaterialLedgerTable() {
   /* ================= ✅ MATERIAL LIST COLLAPSE ================= */
   const [materialListOpen, setMaterialListOpen] = useState(true);
 
-  /* ✅ quick lookup map for siteId -> siteName */
-  const siteById = useMemo(() => {
-    const m = new Map<string, Site>();
-    sites.forEach((s) => m.set(s.id, s));
-    return m;
-  }, [sites]);
-
-  /* ================= LOAD SITES + SUPPLIERS ================= */
+  /* ================= LOAD SITES + SUPPLIERS + MATERIAL MASTER ================= */
   useEffect(() => {
     (async () => {
       try {
-        const [sRes, supRes] = await Promise.all([
+        const [sRes, supRes, mRes] = await Promise.all([
           fetch(`${SITE_API}?_ts=${Date.now()}`, {
             cache: "no-store",
             credentials: "include",
           }),
           fetch(`${SUPPLIER_API}?_ts=${Date.now()}`, {
+            cache: "no-store",
+            credentials: "include",
+          }),
+          fetch(`${MATERIAL_MASTER_API}?_ts=${Date.now()}`, {
             cache: "no-store",
             credentials: "include",
           }),
@@ -148,6 +154,13 @@ export default function MaterialLedgerTable() {
         if (supRes.ok) {
           const supData = await supRes.json();
           setSuppliers(Array.isArray(supData) ? supData : supData?.data || []);
+        }
+
+        // ✅ Material master list
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          const list = Array.isArray(mData) ? mData : mData?.data || [];
+          setMaterials(list);
         }
       } catch (e) {
         console.error(e);
@@ -172,7 +185,9 @@ export default function MaterialLedgerTable() {
   const supplierSuggestions = useMemo(() => {
     const q = supplierQuery.trim().toLowerCase();
     if (!q) return suppliers.slice(0, 20);
-    return suppliers.filter((x) => x.name.toLowerCase().includes(q)).slice(0, 20);
+    return suppliers
+      .filter((x) => x.name.toLowerCase().includes(q))
+      .slice(0, 20);
   }, [supplierQuery, suppliers]);
 
   function applySupplierByName(name: string) {
@@ -222,22 +237,7 @@ export default function MaterialLedgerTable() {
       }
 
       const data = await res.json();
-      const arr: any[] = Array.isArray(data) ? data : data?.data || [];
-
-      // ✅ normalize siteId so table + edit both get it
-      const normalized: LedgerRow[] = arr.map((r: any) => {
-        const sid: string | null =
-          r?.siteId ?? r?.site?.id ?? (r?.site === null ? null : null);
-
-        return {
-          ...r,
-          siteId: sid ?? null,
-          // keep backend site if provided
-          site: r?.site ?? null,
-        };
-      });
-
-      setRows(normalized);
+      setRows(Array.isArray(data) ? data : data?.data || []);
     } catch (e) {
       console.error(e);
       setRows([]);
@@ -299,18 +299,55 @@ export default function MaterialLedgerTable() {
     return { totalAmt, totalPay, balance };
   }, [rows]);
 
-  /* ================= MATERIAL SUMMARY ================= */
-  const materialSummary = useMemo(() => {
-    const map = new Map<string, { qty: number; amt: number }>();
+  /* ================= ✅ MATERIAL SUMMARY (Dynamic from Material Master) ================= */
+  const materialCards = useMemo(() => {
+    const masterNames = (materials || [])
+      .map((m) => cleanStr(m.name))
+      .filter(Boolean);
+
+    // Fallback (agar material master empty ho)
+    const fallbackNames = Array.from(
+      new Set(rows.map((r) => cleanStr(r.material)).filter(Boolean))
+    );
+
+    const names = masterNames.length ? masterNames : fallbackNames;
+
+    const lowerToCanonical = new Map<string, string>();
+    names.forEach((nm) => lowerToCanonical.set(nm.toLowerCase(), nm));
+
+    const sums = new Map<string, { qty: number; amt: number }>();
+    names.forEach((nm) => sums.set(nm, { qty: 0, amt: 0 }));
+
+    // track unmatched (optional Other card)
+    let other = { qty: 0, amt: 0 };
+
     for (const r of rows) {
-      const key = (r.material || "Other").toString();
-      const prev = map.get(key) || { qty: 0, amt: 0 };
-      prev.qty += n(r.qty);
-      prev.amt += n(r.totalAmt ?? n(r.qty) * n(r.rate));
-      map.set(key, prev);
+      const raw = cleanStr(r.material) || "Other";
+      const key = raw.toLowerCase();
+      const canonical = lowerToCanonical.get(key);
+
+      const amt = n(r.totalAmt ?? n(r.qty) * n(r.rate));
+      if (canonical) {
+        const prev = sums.get(canonical)!;
+        prev.qty += n(r.qty);
+        prev.amt += amt;
+      } else {
+        other.qty += n(r.qty);
+        other.amt += amt;
+      }
     }
-    return map;
-  }, [rows]);
+
+    const cards = names.map((nm) => {
+      const v = sums.get(nm) || { qty: 0, amt: 0 };
+      return { name: nm, qty: v.qty, amt: v.amt };
+    });
+
+    // ✅ if some rows have material not in master, show one "Other" card at end
+    const hasOther = other.qty !== 0 || other.amt !== 0;
+    if (hasOther) cards.push({ name: "Other", qty: other.qty, amt: other.amt });
+
+    return cards;
+  }, [rows, materials]);
 
   /* ================= ACTION HANDLERS (placeholder) ================= */
   const exportExcel = () => {
@@ -401,7 +438,9 @@ export default function MaterialLedgerTable() {
                   ))}
                 </datalist>
                 <div className="mt-1 text-[11px] text-muted-foreground">
-                  {selectedSupplierId ? "Supplier selected" : "Type & select supplier"}
+                  {selectedSupplierId
+                    ? "Supplier selected"
+                    : "Type & select supplier"}
                 </div>
               </div>
 
@@ -446,13 +485,18 @@ export default function MaterialLedgerTable() {
           <div className="flex items-center justify-between gap-2">
             <p className="font-semibold">Material List</p>
 
+            {/* collapse button */}
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="h-8 w-8 border bg-background/20 hover:bg-muted/40"
               onClick={() => setMaterialListOpen((p) => !p)}
-              aria-label={materialListOpen ? "Collapse material list" : "Expand material list"}
+              aria-label={
+                materialListOpen
+                  ? "Collapse material list"
+                  : "Expand material list"
+              }
               title={materialListOpen ? "Collapse" : "Expand"}
             >
               <ChevronDown
@@ -464,56 +508,64 @@ export default function MaterialLedgerTable() {
           </div>
 
           {materialListOpen && (
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
-              {["Sand", "Limestone", "Murum", "Other"].map((m) => {
-                const v = materialSummary.get(m) || { qty: 0, amt: 0 };
-                return (
-                  <div key={m} className="border rounded-md p-3 bg-background/20">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium">{m}</div>
-                      <div className="text-[11px] text-muted-foreground">Summary</div>
-                    </div>
-
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <Input
-                        value={v.qty ? String(v.qty) : ""}
-                        placeholder="Qty"
-                        className="h-9 text-sm"
-                        disabled
-                      />
-                      <Input
-                        value={v.amt ? String(Math.round(v.amt)) : ""}
-                        placeholder="Amt"
-                        className="h-9 text-sm"
-                        disabled
-                      />
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {materialCards.map((m) => (
+                <div
+                  key={m.name}
+                  className="border rounded-md p-3 bg-background/20"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium truncate">{m.name}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Summary
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <Input
+                      value={m.qty ? String(m.qty) : ""}
+                      placeholder="Qty"
+                      className="h-9 text-sm"
+                      disabled
+                    />
+                    <Input
+                      value={m.amt ? String(Math.round(m.amt)) : ""}
+                      placeholder="Amt"
+                      className="h-9 text-sm"
+                      disabled
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* ✅ TOTALS + ACTIONS (same) */}
+        {/* ✅ TOTALS + ACTIONS (unchanged) */}
         <div className="flex flex-col md:flex-row md:items-stretch gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 flex-1">
             <div className="p-2 rounded-lg border bg-green-100/80 dark:bg-green-900/40">
-              <p className="text-[10px] md:text-[11px] text-default-700">Total Amount</p>
+              <p className="text-[10px] md:text-[11px] text-default-700">
+                Total Amount
+              </p>
               <p className="text-base md:text-lg font-bold text-green-700 dark:text-green-300 leading-tight">
                 ₹ {totals.totalAmt.toFixed(2)}
               </p>
             </div>
 
             <div className="p-2 rounded-lg border bg-red-100/80 dark:bg-red-900/40">
-              <p className="text-[10px] md:text-[11px] text-default-700">Total Pay</p>
+              <p className="text-[10px] md:text-[11px] text-default-700">
+                Total Pay
+              </p>
               <p className="text-base md:text-lg font-bold text-red-700 dark:text-red-300 leading-tight">
                 ₹ {totals.totalPay.toFixed(2)}
               </p>
             </div>
 
             <div className="p-2 rounded-lg border bg-blue-100/80 dark:bg-blue-900/40">
-              <p className="text-[10px] md:text-[11px] text-default-700">Balance</p>
+              <p className="text-[10px] md:text-[11px] text-default-700">
+                Balance
+              </p>
               <p className="text-base md:text-lg font-bold text-blue-700 dark:text-blue-300 leading-tight">
                 ₹ {totals.balance.toFixed(2)}
               </p>
@@ -663,13 +715,6 @@ export default function MaterialLedgerTable() {
                     ) : (
                       rows.map((row) => {
                         const checked = selectedIds.has(row.id);
-
-                        // ✅ Site name fallback: row.site missing => use row.siteId + sites map
-                        const siteName =
-                          row.site?.siteName ||
-                          (row.siteId ? siteById.get(row.siteId)?.siteName : "") ||
-                          "-";
-
                         return (
                           <tr
                             key={row.id}
@@ -688,10 +733,7 @@ export default function MaterialLedgerTable() {
                             </td>
 
                             <td className="p-3">{formatDate(row.entryDate)}</td>
-
-                            {/* ✅ FIXED Site Column */}
-                            <td className="p-3">{siteName}</td>
-
+                            <td className="p-3">{row.site?.siteName || "-"}</td>
                             <td className="p-3">{row.receiptNo || "-"}</td>
                             <td className="p-3">
                               {row.parchiPhoto ? (
@@ -841,7 +883,7 @@ export default function MaterialLedgerTable() {
             "
           >
             <EditMaterialLedgerTable
-              rows={selectedRows}
+              rows={selectedRows as any}
               sites={sites}
               baseUrl={BASE_URL}
               onCancel={() => setOpenBulkEdit(false)}
