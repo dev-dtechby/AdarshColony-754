@@ -70,10 +70,10 @@ type LedgerRow = {
 
   gstPercent?: number | null;
   taxAmt?: number | null;
-  totalAmt?: number | null;
+  totalAmt?: number | null; // (UI will compute Total from qty*rate as requested)
 
   paymentAmt?: number | null;
-  balanceAmt?: number | null;
+  balanceAmt?: number | null; // (UI will compute Balance from Total-Payment as requested)
 };
 
 /* ================= HELPERS ================= */
@@ -93,11 +93,19 @@ function n(v: any) {
 
 const cleanStr = (v: any) => String(v ?? "").trim();
 
+/* ✅ REQUESTED LEDGER CALCULATION:
+   Total = Qty * Rate
+   Balance = Total - Payment
+*/
+const rowTotal = (r: LedgerRow) => n(r.qty) * n(r.rate);
+const rowPayment = (r: LedgerRow) => n(r.paymentAmt);
+const rowBalance = (r: LedgerRow) => rowTotal(r) - rowPayment(r);
+
 export default function MaterialLedgerTable() {
   /* ================= MASTER DATA ================= */
   const [sites, setSites] = useState<Site[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [materials, setMaterials] = useState<MaterialMaster[]>([]); // ✅ NEW
+  const [materials, setMaterials] = useState<MaterialMaster[]>([]);
 
   /* ================= FILTERS ================= */
   const [supplierQuery, setSupplierQuery] = useState("");
@@ -156,7 +164,6 @@ export default function MaterialLedgerTable() {
           setSuppliers(Array.isArray(supData) ? supData : supData?.data || []);
         }
 
-        // ✅ Material master list
         if (mRes.ok) {
           const mData = await mRes.json();
           const list = Array.isArray(mData) ? mData : mData?.data || [];
@@ -291,10 +298,10 @@ export default function MaterialLedgerTable() {
     [rows, selectedIds]
   );
 
-  /* ================= TOTALS ================= */
+  /* ================= TOTALS (based on requested row ledger calc) ================= */
   const totals = useMemo(() => {
-    const totalPay = rows.reduce((a, r) => a + n(r.paymentAmt), 0);
-    const totalAmt = rows.reduce((a, r) => a + n(r.totalAmt), 0);
+    const totalPay = rows.reduce((a, r) => a + rowPayment(r), 0);
+    const totalAmt = rows.reduce((a, r) => a + rowTotal(r), 0);
     const balance = totalAmt - totalPay;
     return { totalAmt, totalPay, balance };
   }, [rows]);
@@ -305,7 +312,6 @@ export default function MaterialLedgerTable() {
       .map((m) => cleanStr(m.name))
       .filter(Boolean);
 
-    // Fallback (agar material master empty ho)
     const fallbackNames = Array.from(
       new Set(rows.map((r) => cleanStr(r.material)).filter(Boolean))
     );
@@ -318,7 +324,6 @@ export default function MaterialLedgerTable() {
     const sums = new Map<string, { qty: number; amt: number }>();
     names.forEach((nm) => sums.set(nm, { qty: 0, amt: 0 }));
 
-    // track unmatched (optional Other card)
     let other = { qty: 0, amt: 0 };
 
     for (const r of rows) {
@@ -326,7 +331,7 @@ export default function MaterialLedgerTable() {
       const key = raw.toLowerCase();
       const canonical = lowerToCanonical.get(key);
 
-      const amt = n(r.totalAmt ?? n(r.qty) * n(r.rate));
+      const amt = rowTotal(r); // ✅ Qty*Rate
       if (canonical) {
         const prev = sums.get(canonical)!;
         prev.qty += n(r.qty);
@@ -342,7 +347,6 @@ export default function MaterialLedgerTable() {
       return { name: nm, qty: v.qty, amt: v.amt };
     });
 
-    // ✅ if some rows have material not in master, show one "Other" card at end
     const hasOther = other.qty !== 0 || other.amt !== 0;
     if (hasOther) cards.push({ name: "Other", qty: other.qty, amt: other.amt });
 
@@ -403,17 +407,14 @@ export default function MaterialLedgerTable() {
   /* ================= UI ================= */
   return (
     <Card className="p-4 md:p-6 shadow-sm border rounded-xl">
-      {/* ✅ HEADER: Title + compact filters on right */}
       <CardHeader className="pb-3">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <CardTitle className="text-xl md:text-2xl font-semibold text-default-900">
             Material Supplier Ledger
           </CardTitle>
 
-          {/* Right side controls (compact) */}
           <div className="w-full lg:w-auto">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-              {/* Supplier */}
               <div className="w-full lg:w-[260px]">
                 <Input
                   placeholder="Supplier..."
@@ -444,7 +445,6 @@ export default function MaterialLedgerTable() {
                 </div>
               </div>
 
-              {/* Site */}
               <select
                 value={selectedSiteId}
                 onChange={(e) => setSelectedSiteId(e.target.value)}
@@ -458,7 +458,6 @@ export default function MaterialLedgerTable() {
                 ))}
               </select>
 
-              {/* Contact */}
               <Input
                 placeholder="Contact"
                 value={contact}
@@ -466,7 +465,6 @@ export default function MaterialLedgerTable() {
                 className="h-9 w-full lg:w-[170px]"
               />
 
-              {/* Purchase */}
               <Button
                 className="flex items-center gap-2 h-9 w-full lg:w-[160px]"
                 disabled={!selectedSupplierId}
@@ -480,12 +478,11 @@ export default function MaterialLedgerTable() {
       </CardHeader>
 
       <CardContent className="space-y-5">
-        {/* ✅ MATERIAL LIST (Collapsible) */}
+        {/* MATERIAL LIST */}
         <div className="border rounded-lg p-3 md:p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="font-semibold">Material List</p>
 
-            {/* collapse button */}
             <Button
               type="button"
               variant="ghost"
@@ -541,7 +538,7 @@ export default function MaterialLedgerTable() {
           )}
         </div>
 
-        {/* ✅ TOTALS + ACTIONS (unchanged) */}
+        {/* TOTALS + ACTIONS */}
         <div className="flex flex-col md:flex-row md:items-stretch gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 flex-1">
             <div className="p-2 rounded-lg border bg-green-100/80 dark:bg-green-900/40">
@@ -715,6 +712,10 @@ export default function MaterialLedgerTable() {
                     ) : (
                       rows.map((row) => {
                         const checked = selectedIds.has(row.id);
+                        const total = rowTotal(row);      // ✅ Qty*Rate
+                        const payment = rowPayment(row);  // ✅ Payment
+                        const balance = rowBalance(row);  // ✅ Total-Payment
+
                         return (
                           <tr
                             key={row.id}
@@ -789,19 +790,15 @@ export default function MaterialLedgerTable() {
                             <td className="p-3">
                               {row.taxAmt != null ? `₹ ${n(row.taxAmt).toFixed(2)}` : "-"}
                             </td>
-                            <td className="p-3 font-semibold">
-                              {row.totalAmt != null ? `₹ ${n(row.totalAmt).toFixed(2)}` : "-"}
-                            </td>
-                            <td className="p-3">
-                              {row.paymentAmt != null
-                                ? `₹ ${n(row.paymentAmt).toFixed(2)}`
-                                : "-"}
-                            </td>
-                            <td className="p-3">
-                              {row.balanceAmt != null
-                                ? `₹ ${n(row.balanceAmt).toFixed(2)}`
-                                : "-"}
-                            </td>
+
+                            {/* ✅ Total = Qty*Rate */}
+                            <td className="p-3 font-semibold">₹ {total.toFixed(2)}</td>
+
+                            {/* ✅ Payment = paymentAmt (0 if null) */}
+                            <td className="p-3">₹ {payment.toFixed(2)}</td>
+
+                            {/* ✅ Balance = Total - Payment */}
+                            <td className="p-3">₹ {balance.toFixed(2)}</td>
 
                             <td className="p-3">
                               <div className="flex gap-2">
@@ -841,7 +838,9 @@ export default function MaterialLedgerTable() {
                     Material Purchase Entry
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                    {selectedSupplier?.name ? `Supplier: ${selectedSupplier.name}` : ""}
+                    {selectedSupplier?.name
+                      ? `Supplier: ${selectedSupplier.name}`
+                      : ""}
                     {selectedSite?.siteName ? ` • Site: ${selectedSite.siteName}` : ""}
                   </div>
                 </div>
