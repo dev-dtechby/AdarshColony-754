@@ -16,6 +16,13 @@ import PaymentsTable from "./PaymentsTable";
 import EditPaymentDialog from "./EditPaymentDialog";
 import BulkEditPaymentsDialog from "./BulkEditPaymentsDialog";
 
+/* ================= SITE API (local) ================= */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+const SITE_API = `${BASE_URL}/api/sites`;
+
+type Site = { id: string; siteName: string };
+
 /* ================= MAIN COMPONENT ================= */
 export default function PaymentsEntry({ trans }: { trans: any }) {
   const { toast } = useToast();
@@ -23,6 +30,10 @@ export default function PaymentsEntry({ trans }: { trans: any }) {
   /* ===== Master ===== */
   const [ledgerTypes, setLedgerTypes] = useState<LedgerType[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
+
+  const [sites, setSites] = useState<Site[]>([]);
+  const [loadingSites, setLoadingSites] = useState(false);
+  const [selectedSiteId, setSelectedSiteId] = useState<string>(""); // ✅ Site filter
 
   /* ===== Selected ===== */
   const [ledgerTypeId, setLedgerTypeId] = useState("");
@@ -90,6 +101,24 @@ export default function PaymentsEntry({ trans }: { trans: any }) {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
+  /* ================= LOAD SITES ================= */
+  const loadSites = async () => {
+    try {
+      setLoadingSites(true);
+      const res = await fetch(`${SITE_API}?_ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const data = res.ok ? await res.json() : null;
+      setSites(Array.isArray(data) ? data : data?.data || []);
+    } catch (e) {
+      console.error(e);
+      setSites([]);
+    } finally {
+      setLoadingSites(false);
+    }
+  };
+
   /* ================= LOAD LEDGER TYPES ================= */
   const loadLedgerTypes = async () => {
     try {
@@ -108,46 +137,57 @@ export default function PaymentsEntry({ trans }: { trans: any }) {
     }
   };
 
-  /* ================= LOAD LEDGERS BY TYPE ================= */
-const loadLedgers = async (typeId: string) => {
-  if (!typeId) {
-    setLedgers([]);
-    setSelectedLedgerId("");
-    setLedgerQuery("");
-    return;
-  }
+  /* ================= LOAD LEDGERS (FILTER: TYPE + SITE) ================= */
+  const loadLedgers = async (typeId: string, siteId: string) => {
+    if (!typeId) {
+      setLedgers([]);
+      setSelectedLedgerId("");
+      setLedgerQuery("");
+      return;
+    }
 
-  try {
-    setLoadingLedgers(true);
+    try {
+      setLoadingLedgers(true);
 
-    // ✅ If ALL -> fetch all ledgers
-    const url =
-      typeId === "ALL"
-        ? `${LEDGERS_API}?_ts=${Date.now()}`
-        : `${LEDGERS_API}?ledgerTypeId=${encodeURIComponent(typeId)}&_ts=${Date.now()}`;
+      const params = new URLSearchParams();
+      params.set("_ts", String(Date.now()));
 
-    const res = await fetch(url, {
-      cache: "no-store",
-      credentials: "include",
-    });
+      // ✅ If type is not ALL, filter by ledgerTypeId
+      if (typeId !== "ALL") params.set("ledgerTypeId", typeId);
 
-    const data = res.ok ? await res.json() : null;
-    const list = Array.isArray(data) ? data : data?.data || [];
-    setLedgers(list);
+      // ✅ filter by siteId (if selected)
+      if (siteId) params.set("siteId", siteId);
 
-    // reset selection when type changes
-    setSelectedLedgerId("");
-    setLedgerQuery("");
-    setRows([]);
-    setSelectedIds(new Set());
-  } catch (e) {
-    console.error(e);
-    setLedgers([]);
-  } finally {
-    setLoadingLedgers(false);
-  }
-};
+      const url = `${LEDGERS_API}?${params.toString()}`;
 
+      const res = await fetch(url, {
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      const data = res.ok ? await res.json() : null;
+      let list: any[] = Array.isArray(data) ? data : data?.data || [];
+
+      // ✅ SAFETY: if backend doesn't filter by siteId, filter on UI too
+      if (siteId) list = list.filter((l) => l.siteId === siteId);
+
+      // ✅ SAFETY: if backend doesn't filter by ledgerTypeId (rare), filter on UI too
+      if (typeId !== "ALL") list = list.filter((l) => l.ledgerTypeId === typeId);
+
+      setLedgers(list);
+
+      // reset selection when filters change
+      setSelectedLedgerId("");
+      setLedgerQuery("");
+      setRows([]);
+      setSelectedIds(new Set());
+    } catch (e) {
+      console.error(e);
+      setLedgers([]);
+    } finally {
+      setLoadingLedgers(false);
+    }
+  };
 
   /* ================= LOAD PAYMENTS ================= */
   const loadPayments = async (ledgerId: string) => {
@@ -179,13 +219,15 @@ const loadLedgers = async (typeId: string) => {
 
   useEffect(() => {
     loadLedgerTypes();
+    loadSites();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ reload ledgers when ledgerType OR site changes
   useEffect(() => {
-    loadLedgers(ledgerTypeId);
+    loadLedgers(ledgerTypeId, selectedSiteId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ledgerTypeId]);
+  }, [ledgerTypeId, selectedSiteId]);
 
   useEffect(() => {
     loadPayments(selectedLedgerId);
@@ -224,11 +266,13 @@ const loadLedgers = async (typeId: string) => {
   };
 
   /* ================= TOTALS ================= */
-  const totalPaid = useMemo(() => rows.reduce((a, r) => a + n(r.amount), 0), [rows]);
+  const totalPaid = useMemo(
+    () => rows.reduce((a, r) => a + n(r.amount), 0),
+    [rows]
+  );
 
   /* ================= CREATE PAYMENT ================= */
-  const canSave =
-    !!selectedLedgerId && !!payDate && n(amount) > 0 && !!payMode;
+  const canSave = !!selectedLedgerId && !!payDate && n(amount) > 0 && !!payMode;
 
   const resetForm = () => {
     setPayDate(new Date());
@@ -366,96 +410,97 @@ const loadLedgers = async (typeId: string) => {
       setDeleteLoading(false);
     }
   };
-const exportPaymentsToExcel = () => {
-  // Simple CSV (Excel open kar leta hai)
-  if (!rows.length) return;
 
-  const fileBase = (selectedLedger?.name || "payments")
-    .replace(/[^\w]+/g, "_")
-    .slice(0, 40);
+  /* ================= EXPORTS (existing behavior retained) ================= */
+  const exportPaymentsToExcel = () => {
+    if (!rows.length) return;
 
-  const header = ["Date", "Mode", "Particular", "Amount"];
-  const csvRows = [
-    header.join(","),
-    ...rows.map((r) => {
-      const d = new Date(r.paymentDate);
-      const dateStr = isNaN(d.getTime()) ? r.paymentDate : d.toLocaleDateString();
-      const mode = r.paymentMode;
-      const part = (r.particular || "-").replace(/"/g, '""');
-      const amt = String(r.amount ?? 0);
-      return [`"${dateStr}"`, `"${mode}"`, `"${part}"`, `"${amt}"`].join(",");
-    }),
-  ].join("\n");
+    const fileBase = (selectedLedger?.name || "payments")
+      .replace(/[^\w]+/g, "_")
+      .slice(0, 40);
 
-  const blob = new Blob([csvRows], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
+    const header = ["Date", "Mode", "Particular", "Amount"];
+    const csvRows = [
+      header.join(","),
+      ...rows.map((r) => {
+        const d = new Date(r.paymentDate);
+        const dateStr = isNaN(d.getTime()) ? r.paymentDate : d.toLocaleDateString();
+        const mode = r.paymentMode;
+        const part = (r.particular || "-").replace(/"/g, '""');
+        const amt = String(r.amount ?? 0);
+        return [`"${dateStr}"`, `"${mode}"`, `"${part}"`, `"${amt}"`].join(",");
+      }),
+    ].join("\n");
 
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${fileBase}_payments.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-};
+    const blob = new Blob([csvRows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
 
-const exportPaymentsToPDF = () => {
-  if (!rows.length) return;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${fileBase}_payments.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
-  const title = `Payment Report - ${selectedLedger?.name || ""}`;
-  const html = `
-    <html>
-      <head>
-        <meta charset="utf-8"/>
-        <title>${title}</title>
-        <style>
-          body{font-family: Arial, sans-serif; padding:16px;}
-          h2{margin:0 0 10px;}
-          table{width:100%; border-collapse:collapse; font-size:12px;}
-          th,td{border:1px solid #999; padding:6px; text-align:left;}
-          th{background:#eee;}
-        </style>
-      </head>
-      <body>
-        <h2>${title}</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Mode</th>
-              <th>Particular</th>
-              <th>Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows
-              .map((r) => {
-                const d = new Date(r.paymentDate);
-                const dateStr = isNaN(d.getTime()) ? r.paymentDate : d.toLocaleDateString();
-                return `
-                  <tr>
-                    <td>${dateStr}</td>
-                    <td>${r.paymentMode}</td>
-                    <td>${r.particular || "-"}</td>
-                    <td>${Number(r.amount || 0).toFixed(2)}</td>
-                  </tr>`;
-              })
-              .join("")}
-          </tbody>
-        </table>
-        <script>
-          window.onload = function(){ window.print(); }
-        </script>
-      </body>
-    </html>
-  `;
+  const exportPaymentsToPDF = () => {
+    if (!rows.length) return;
 
-  const w = window.open("", "_blank", "noopener,noreferrer");
-  if (!w) return;
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-};
+    const title = `Payment Report - ${selectedLedger?.name || ""}`;
+    const html = `
+      <html>
+        <head>
+          <meta charset="utf-8"/>
+          <title>${title}</title>
+          <style>
+            body{font-family: Arial, sans-serif; padding:16px;}
+            h2{margin:0 0 10px;}
+            table{width:100%; border-collapse:collapse; font-size:12px;}
+            th,td{border:1px solid #999; padding:6px; text-align:left;}
+            th{background:#eee;}
+          </style>
+        </head>
+        <body>
+          <h2>${title}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Mode</th>
+                <th>Particular</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map((r) => {
+                  const d = new Date(r.paymentDate);
+                  const dateStr = isNaN(d.getTime()) ? r.paymentDate : d.toLocaleDateString();
+                  return `
+                    <tr>
+                      <td>${dateStr}</td>
+                      <td>${r.paymentMode}</td>
+                      <td>${r.particular || "-"}</td>
+                      <td>${Number(r.amount || 0).toFixed(2)}</td>
+                    </tr>`;
+                })
+                .join("")}
+            </tbody>
+          </table>
+          <script>
+            window.onload = function(){ window.print(); }
+          </script>
+        </body>
+      </html>
+    `;
+
+    const w = window.open("", "_blank", "noopener,noreferrer");
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
 
   /* ================= BULK DELETE ================= */
   const confirmBulkDelete = async () => {
@@ -496,25 +541,28 @@ const exportPaymentsToPDF = () => {
             Payment Entry
           </CardTitle>
 
-            <LedgerSelector
-              ledgerTypes={ledgerTypes}
-              loadingTypes={loadingTypes}
-              ledgerTypeId={ledgerTypeId}
-              onLedgerTypeChange={(id) => setLedgerTypeId(id)}
-              loadingLedgers={loadingLedgers}
-              ledgerQuery={ledgerQuery}
-              onLedgerQueryChange={(val) => {
-                setLedgerQuery(val);
-                if (!val) setSelectedLedgerId("");
-              }}
-              ledgerSuggestions={ledgerSuggestions}
-              selectedLedgerId={selectedLedgerId}
-              onBlurApplyLedgerByName={(name) => applyLedgerByName(name)}
-              exportDisabled={!selectedLedgerId || rows.length === 0}
-              onExportExcel={exportPaymentsToExcel}
-              onExportPDF={exportPaymentsToPDF}
-            />
-
+          <LedgerSelector
+            ledgerTypes={ledgerTypes}
+            loadingTypes={loadingTypes}
+            ledgerTypeId={ledgerTypeId}
+            onLedgerTypeChange={(id) => setLedgerTypeId(id)}
+            sites={sites}
+            loadingSites={loadingSites}
+            selectedSiteId={selectedSiteId}
+            onSiteChange={(siteId) => setSelectedSiteId(siteId)}
+            loadingLedgers={loadingLedgers}
+            ledgerQuery={ledgerQuery}
+            onLedgerQueryChange={(val) => {
+              setLedgerQuery(val);
+              if (!val) setSelectedLedgerId("");
+            }}
+            ledgerSuggestions={ledgerSuggestions}
+            selectedLedgerId={selectedLedgerId}
+            onBlurApplyLedgerByName={(name) => applyLedgerByName(name)}
+            exportDisabled={!selectedLedgerId || rows.length === 0}
+            onExportExcel={exportPaymentsToExcel}
+            onExportPDF={exportPaymentsToPDF}
+          />
         </div>
       </CardHeader>
 

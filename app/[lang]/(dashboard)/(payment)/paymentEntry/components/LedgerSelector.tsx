@@ -6,17 +6,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FileDown } from "lucide-react";
 import { Ledger, LedgerType } from "./types";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+
+type Site = { id: string; siteName: string };
 
 export default function LedgerSelector({
   ledgerTypes,
   loadingTypes,
   ledgerTypeId,
   onLedgerTypeChange,
+
+  sites,
+  loadingSites,
+  selectedSiteId,
+  onSiteChange,
 
   loadingLedgers,
   ledgerQuery,
@@ -33,6 +36,11 @@ export default function LedgerSelector({
   loadingTypes: boolean;
   ledgerTypeId: string;
   onLedgerTypeChange: (id: string) => void;
+
+  sites: Site[];
+  loadingSites: boolean;
+  selectedSiteId: string;
+  onSiteChange: (siteId: string) => void;
 
   loadingLedgers: boolean;
   ledgerQuery: string;
@@ -60,7 +68,7 @@ export default function LedgerSelector({
               {loadingTypes ? "Loading types..." : "Select Ledger Type"}
             </option>
 
-            {/* ✅ Show All Ledgers */}
+            {/* Optional: Show all ledgers (but still filtered by Site if selected) */}
             <option value="ALL">Show All Ledgers</option>
 
             {ledgerTypes.map((t) => (
@@ -104,51 +112,65 @@ export default function LedgerSelector({
             {selectedLedgerId
               ? "Ledger selected"
               : ledgerTypeId
-              ? ledgerTypeId === "ALL"
-                ? "Showing all ledgers"
-                : "Type & select ledger"
+              ? selectedSiteId
+                ? "Filtered by Site + Ledger Type"
+                : "Filtered by Ledger Type"
               : "Select Ledger Type"}
           </div>
         </div>
 
-        {/* ✅ Export (replaces Refresh) */}
+        {/* Export + Site (same row) */}
         <div className="space-y-1">
-          <Label className="opacity-0">Export</Label>
+          <Label>Site</Label>
 
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className="h-10 w-full flex items-center gap-2"
-                disabled={exportDisabled}
-              >
-                <FileDown className="h-4 w-4" />
-                Export
-              </Button>
-            </PopoverTrigger>
-
-            <PopoverContent align="end" className="w-44 p-2">
-              <div className="flex flex-col gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch gap-2">
+            {/* ✅ Export small button */}
+            <Popover>
+              <PopoverTrigger asChild>
                 <Button
-                  size="sm"
                   variant="outline"
-                  className="justify-start"
-                  onClick={onExportExcel}
+                  size="sm"
+                  className="h-10 px-3 w-full sm:w-auto flex items-center gap-2"
+                  disabled={exportDisabled}
                 >
-                  Export Excel
+                  <FileDown className="h-4 w-4" />
+                  Export
                 </Button>
+              </PopoverTrigger>
 
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="justify-start"
-                  onClick={onExportPDF}
-                >
-                  Export PDF
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
+              <PopoverContent align="end" className="w-44 p-2">
+                <div className="flex flex-col gap-2">
+                  <Button size="sm" variant="outline" className="justify-start" onClick={onExportExcel}>
+                    Export Excel
+                  </Button>
+                  <Button size="sm" variant="outline" className="justify-start" onClick={onExportPDF}>
+                    Export PDF
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* ✅ Site dropdown beside export */}
+            <select
+              className="border px-3 py-2 rounded-md bg-background h-10 text-sm w-full"
+              value={selectedSiteId}
+              onChange={(e) => onSiteChange(e.target.value)}
+            >
+              <option value="">
+                {loadingSites ? "Loading sites..." : "All Sites"}
+              </option>
+
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.siteName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="text-[11px] text-muted-foreground">
+            {selectedSiteId ? "Site filter applied" : "All sites"}
+          </div>
         </div>
       </div>
     </div>
