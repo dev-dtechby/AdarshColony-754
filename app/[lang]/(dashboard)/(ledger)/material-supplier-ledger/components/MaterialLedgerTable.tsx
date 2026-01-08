@@ -1,3 +1,5 @@
+// D:\Projects\branao.in\clone\branao-Full-Kit\app\[lang]\(dashboard)\(ledger)\material-supplier-ledger\components\MaterialLedgerTable.tsx
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -27,8 +29,6 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 const SITE_API = `${BASE_URL}/api/sites`;
 const SUPPLIER_API = `${BASE_URL}/api/material-suppliers`;
 const LEDGER_API = `${BASE_URL}/api/material-supplier-ledger`;
-
-// ✅ Material Master API (as per your backend routes)
 const MATERIAL_MASTER_API = `${BASE_URL}/api/material-master`;
 
 /* ================= TYPES ================= */
@@ -70,10 +70,10 @@ type LedgerRow = {
 
   gstPercent?: number | null;
   taxAmt?: number | null;
-  totalAmt?: number | null; // (UI will compute Total from qty*rate as requested)
+  totalAmt?: number | null;
 
   paymentAmt?: number | null;
-  balanceAmt?: number | null; // (UI will compute Balance from Total-Payment as requested)
+  balanceAmt?: number | null;
 };
 
 /* ================= HELPERS ================= */
@@ -93,10 +93,7 @@ function n(v: any) {
 
 const cleanStr = (v: any) => String(v ?? "").trim();
 
-/* ✅ REQUESTED LEDGER CALCULATION:
-   Total = Qty * Rate
-   Balance = Total - Payment
-*/
+/* ✅ Total = Qty * Rate | Balance = Total - Payment */
 const rowTotal = (r: LedgerRow) => n(r.qty) * n(r.rate);
 const rowPayment = (r: LedgerRow) => n(r.paymentAmt);
 const rowBalance = (r: LedgerRow) => rowTotal(r) - rowPayment(r);
@@ -111,7 +108,6 @@ export default function MaterialLedgerTable() {
   const [supplierQuery, setSupplierQuery] = useState("");
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
-  const [contact, setContact] = useState("");
 
   /* ================= LEDGER ================= */
   const [rows, setRows] = useState<LedgerRow[]>([]);
@@ -119,6 +115,11 @@ export default function MaterialLedgerTable() {
 
   /* ================= PURCHASE MODAL ================= */
   const [openPurchase, setOpenPurchase] = useState(false);
+
+  /* ================= PAYMENT ENTRY MODAL ================= */
+  const [openPayment, setOpenPayment] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentSaving, setPaymentSaving] = useState(false);
 
   /* ================= ACTIONS (EXPORT/IMPORT) ================= */
   const [exportOpen, setExportOpen] = useState(false);
@@ -132,8 +133,20 @@ export default function MaterialLedgerTable() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
+  /* ✅ Single delete */
+  const [singleDeleteOpen, setSingleDeleteOpen] = useState(false);
+  const [singleDeleteId, setSingleDeleteId] = useState<string>("");
+  const [singleDeleteLoading, setSingleDeleteLoading] = useState(false);
+
   /* ================= ✅ MATERIAL LIST COLLAPSE ================= */
   const [materialListOpen, setMaterialListOpen] = useState(true);
+
+  /* ✅ Site map (Fix: show siteName even if backend doesn't include `site`) */
+  const siteNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    sites.forEach((s) => m.set(s.id, s.siteName));
+    return m;
+  }, [sites]);
 
   /* ================= LOAD SITES + SUPPLIERS + MATERIAL MASTER ================= */
   useEffect(() => {
@@ -204,7 +217,6 @@ export default function MaterialLedgerTable() {
     if (found) {
       setSelectedSupplierId(found.id);
       setSupplierQuery(found.name);
-      setContact(found.contactNo || "");
       return true;
     }
     return false;
@@ -298,7 +310,7 @@ export default function MaterialLedgerTable() {
     [rows, selectedIds]
   );
 
-  /* ================= TOTALS (based on requested row ledger calc) ================= */
+  /* ================= TOTALS ================= */
   const totals = useMemo(() => {
     const totalPay = rows.reduce((a, r) => a + rowPayment(r), 0);
     const totalAmt = rows.reduce((a, r) => a + rowTotal(r), 0);
@@ -306,7 +318,7 @@ export default function MaterialLedgerTable() {
     return { totalAmt, totalPay, balance };
   }, [rows]);
 
-  /* ================= ✅ MATERIAL SUMMARY (Dynamic from Material Master) ================= */
+  /* ================= ✅ MATERIAL SUMMARY ================= */
   const materialCards = useMemo(() => {
     const masterNames = (materials || [])
       .map((m) => cleanStr(m.name))
@@ -331,7 +343,7 @@ export default function MaterialLedgerTable() {
       const key = raw.toLowerCase();
       const canonical = lowerToCanonical.get(key);
 
-      const amt = rowTotal(r); // ✅ Qty*Rate
+      const amt = rowTotal(r);
       if (canonical) {
         const prev = sums.get(canonical)!;
         prev.qty += n(r.qty);
@@ -402,6 +414,135 @@ export default function MaterialLedgerTable() {
     }
   };
 
+  /* ================= ✅ SINGLE DELETE ================= */
+  const openSingleDelete = (id: string) => {
+    setSingleDeleteId(id);
+    setSingleDeleteOpen(true);
+  };
+
+  const confirmSingleDelete = async () => {
+    if (!singleDeleteId) return;
+    try {
+      setSingleDeleteLoading(true);
+      const res = await fetch(`${LEDGER_API}/${singleDeleteId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Delete failed");
+
+      setSingleDeleteOpen(false);
+      setSingleDeleteId("");
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(singleDeleteId);
+        return next;
+      });
+      await loadLedger();
+    } catch (e: any) {
+      alert(e?.message || "Delete failed");
+    } finally {
+      setSingleDeleteLoading(false);
+    }
+  };
+
+  /* ================= ✅ ROW EDIT (use existing Bulk Edit modal for single row) ================= */
+  const editRow = (id: string) => {
+    setSelectedIds(new Set([id]));
+    setOpenBulkEdit(true);
+  };
+
+  /* ================= ✅ PAYMENT ENTRY (distribute payment across selected rows) ================= */
+  const openPaymentEntry = () => {
+    if (!selectedSupplierId) {
+      alert("Please select supplier first.");
+      return;
+    }
+    if (selectedIds.size === 0) {
+      alert("Please select at least 1 row for payment entry.");
+      return;
+    }
+    setPaymentAmount("");
+    setOpenPayment(true);
+  };
+
+  const savePaymentEntry = async () => {
+    const amt = n(paymentAmount);
+    if (!amt || amt <= 0) {
+      alert("Enter valid payment amount.");
+      return;
+    }
+    if (selectedIds.size === 0) {
+      alert("Select rows first.");
+      return;
+    }
+
+    // sort selected rows by entryDate (oldest first)
+    const sorted = [...selectedRows].sort((a, b) => {
+      const da = new Date(a.entryDate).getTime();
+      const db = new Date(b.entryDate).getTime();
+      return da - db;
+    });
+
+    // compute updates
+    let remaining = amt;
+    const updates: Array<{ id: string; paymentAmt: number }> = [];
+
+    for (const r of sorted) {
+      if (remaining <= 0) break;
+
+      const total = rowTotal(r);
+      const paid = rowPayment(r);
+      const due = Math.max(0, total - paid);
+      if (due <= 0) continue;
+
+      const alloc = Math.min(due, remaining);
+      const newPaid = paid + alloc;
+
+      updates.push({ id: r.id, paymentAmt: newPaid });
+      remaining -= alloc;
+    }
+
+    if (!updates.length) {
+      alert("Selected rows already fully paid.");
+      return;
+    }
+
+    try {
+      setPaymentSaving(true);
+
+      // ✅ safest: update one-by-one using existing PUT /:id
+      for (const u of updates) {
+        const res = await fetch(`${LEDGER_API}/${u.id}`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentAmt: u.paymentAmt }),
+        });
+        if (!res.ok) throw new Error("Payment update failed on some rows");
+      }
+
+      setOpenPayment(false);
+      setPaymentAmount("");
+
+      // keep selection as-is (optional). You can clear if you want:
+      // setSelectedIds(new Set());
+
+      await loadLedger();
+
+      if (remaining > 0) {
+        alert(
+          `Payment saved. Extra amount not used: ₹ ${remaining.toFixed(2)} (rows fully paid)`
+        );
+      } else {
+        alert("Payment saved successfully.");
+      }
+    } catch (e: any) {
+      alert(e?.message || "Payment save failed");
+    } finally {
+      setPaymentSaving(false);
+    }
+  };
+
   const tableMaxHeightClass = materialListOpen ? "max-h-[65vh]" : "max-h-[75vh]";
 
   /* ================= UI ================= */
@@ -414,7 +555,9 @@ export default function MaterialLedgerTable() {
           </CardTitle>
 
           <div className="w-full lg:w-auto">
+            {/* ✅ Contact box removed, Payment Entry button added */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              {/* Supplier */}
               <div className="w-full lg:w-[260px]">
                 <Input
                   placeholder="Supplier..."
@@ -423,7 +566,6 @@ export default function MaterialLedgerTable() {
                     setSupplierQuery(e.target.value);
                     if (!e.target.value) {
                       setSelectedSupplierId("");
-                      setContact("");
                       setSelectedIds(new Set());
                     }
                   }}
@@ -439,12 +581,11 @@ export default function MaterialLedgerTable() {
                   ))}
                 </datalist>
                 <div className="mt-1 text-[11px] text-muted-foreground">
-                  {selectedSupplierId
-                    ? "Supplier selected"
-                    : "Type & select supplier"}
+                  {selectedSupplierId ? "Supplier selected" : "Type & select supplier"}
                 </div>
               </div>
 
+              {/* Site */}
               <select
                 value={selectedSiteId}
                 onChange={(e) => setSelectedSiteId(e.target.value)}
@@ -458,13 +599,24 @@ export default function MaterialLedgerTable() {
                 ))}
               </select>
 
-              <Input
-                placeholder="Contact"
-                value={contact}
-                disabled
+              {/* ✅ Payment Entry */}
+              <Button
+                variant="outline"
                 className="h-9 w-full lg:w-[170px]"
-              />
+                disabled={!selectedSupplierId || selectedIds.size === 0}
+                onClick={openPaymentEntry}
+                title={
+                  !selectedSupplierId
+                    ? "Select supplier first"
+                    : selectedIds.size === 0
+                    ? "Select rows for payment"
+                    : "Payment Entry"
+                }
+              >
+                Payment Entry ({selectedIds.size})
+              </Button>
 
+              {/* Purchase */}
               <Button
                 className="flex items-center gap-2 h-9 w-full lg:w-[160px]"
                 disabled={!selectedSupplierId}
@@ -489,11 +641,7 @@ export default function MaterialLedgerTable() {
               size="icon"
               className="h-8 w-8 border bg-background/20 hover:bg-muted/40"
               onClick={() => setMaterialListOpen((p) => !p)}
-              aria-label={
-                materialListOpen
-                  ? "Collapse material list"
-                  : "Expand material list"
-              }
+              aria-label={materialListOpen ? "Collapse material list" : "Expand material list"}
               title={materialListOpen ? "Collapse" : "Expand"}
             >
               <ChevronDown
@@ -507,29 +655,27 @@ export default function MaterialLedgerTable() {
           {materialListOpen && (
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {materialCards.map((m) => (
-                <div
-                  key={m.name}
-                  className="border rounded-md p-3 bg-background/20"
-                >
+                <div key={m.name} className="border rounded-md p-3 bg-background/20">
                   <div className="flex items-center justify-between gap-2">
                     <div className="font-medium truncate">{m.name}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Summary
-                    </div>
+                    <div className="text-[11px] text-muted-foreground">Summary</div>
                   </div>
 
+                  {/* values visible */}
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <Input
                       value={m.qty ? String(m.qty) : ""}
                       placeholder="Qty"
                       className="h-9 text-sm"
-                      disabled
+                      readOnly
+                      tabIndex={-1}
                     />
                     <Input
                       value={m.amt ? String(Math.round(m.amt)) : ""}
                       placeholder="Amt"
                       className="h-9 text-sm"
-                      disabled
+                      readOnly
+                      tabIndex={-1}
                     />
                   </div>
                 </div>
@@ -542,27 +688,21 @@ export default function MaterialLedgerTable() {
         <div className="flex flex-col md:flex-row md:items-stretch gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 flex-1">
             <div className="p-2 rounded-lg border bg-green-100/80 dark:bg-green-900/40">
-              <p className="text-[10px] md:text-[11px] text-default-700">
-                Total Amount
-              </p>
+              <p className="text-[10px] md:text-[11px] text-default-700">Total Amount</p>
               <p className="text-base md:text-lg font-bold text-green-700 dark:text-green-300 leading-tight">
                 ₹ {totals.totalAmt.toFixed(2)}
               </p>
             </div>
 
             <div className="p-2 rounded-lg border bg-red-100/80 dark:bg-red-900/40">
-              <p className="text-[10px] md:text-[11px] text-default-700">
-                Total Pay
-              </p>
+              <p className="text-[10px] md:text-[11px] text-default-700">Total Pay</p>
               <p className="text-base md:text-lg font-bold text-red-700 dark:text-red-300 leading-tight">
                 ₹ {totals.totalPay.toFixed(2)}
               </p>
             </div>
 
             <div className="p-2 rounded-lg border bg-blue-100/80 dark:bg-blue-900/40">
-              <p className="text-[10px] md:text-[11px] text-default-700">
-                Balance
-              </p>
+              <p className="text-[10px] md:text-[11px] text-default-700">Balance</p>
               <p className="text-base md:text-lg font-bold text-blue-700 dark:text-blue-300 leading-tight">
                 ₹ {totals.balance.toFixed(2)}
               </p>
@@ -633,11 +773,7 @@ export default function MaterialLedgerTable() {
               className="hidden"
               onChange={(e) => onImportFile(e.target.files?.[0])}
             />
-            <Button
-              variant="outline"
-              className="h-10 flex items-center gap-2"
-              onClick={triggerImport}
-            >
+            <Button variant="outline" className="h-10 flex items-center gap-2" onClick={triggerImport}>
               <Upload className="h-4 w-4" />
               Import
             </Button>
@@ -712,9 +848,14 @@ export default function MaterialLedgerTable() {
                     ) : (
                       rows.map((row) => {
                         const checked = selectedIds.has(row.id);
-                        const total = rowTotal(row);      // ✅ Qty*Rate
-                        const payment = rowPayment(row);  // ✅ Payment
-                        const balance = rowBalance(row);  // ✅ Total-Payment
+                        const total = rowTotal(row);
+                        const payment = rowPayment(row);
+                        const balance = rowBalance(row);
+
+                        const siteName =
+                          row.site?.siteName ||
+                          (row.siteId ? siteNameById.get(row.siteId) : "") ||
+                          "-";
 
                         return (
                           <tr
@@ -734,7 +875,8 @@ export default function MaterialLedgerTable() {
                             </td>
 
                             <td className="p-3">{formatDate(row.entryDate)}</td>
-                            <td className="p-3">{row.site?.siteName || "-"}</td>
+                            <td className="p-3">{siteName}</td>
+
                             <td className="p-3">{row.receiptNo || "-"}</td>
                             <td className="p-3">
                               {row.parchiPhoto ? (
@@ -791,21 +933,27 @@ export default function MaterialLedgerTable() {
                               {row.taxAmt != null ? `₹ ${n(row.taxAmt).toFixed(2)}` : "-"}
                             </td>
 
-                            {/* ✅ Total = Qty*Rate */}
                             <td className="p-3 font-semibold">₹ {total.toFixed(2)}</td>
-
-                            {/* ✅ Payment = paymentAmt (0 if null) */}
                             <td className="p-3">₹ {payment.toFixed(2)}</td>
-
-                            {/* ✅ Balance = Total - Payment */}
                             <td className="p-3">₹ {balance.toFixed(2)}</td>
 
+                            {/* ✅ Action: Edit + Delete working */}
                             <td className="p-3">
                               <div className="flex gap-2">
-                                <Button size="icon" variant="outline">
+                                <Button
+                                  size="icon"
+                                  variant="outline"
+                                  onClick={() => editRow(row.id)}
+                                  title="Edit row"
+                                >
                                   <Edit className="h-4 w-4" />
                                 </Button>
-                                <Button size="icon" variant="outline">
+                                <Button
+                                  size="icon"
+                                  variant="outline"
+                                  onClick={() => openSingleDelete(row.id)}
+                                  title="Delete row"
+                                >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </div>
@@ -820,6 +968,60 @@ export default function MaterialLedgerTable() {
             </div>
           </div>
         </div>
+
+        {/* ================= PAYMENT ENTRY MODAL ================= */}
+        <Dialog open={openPayment} onOpenChange={setOpenPayment}>
+          <DialogContent
+            className="
+              !p-0 overflow-hidden
+              !w-[96vw] !max-w-[560px]
+              !flex !flex-col
+              [&>button]:hidden
+            "
+          >
+            <div className="h-full min-h-0 flex flex-col">
+              <div className="shrink-0 px-4 md:px-6 py-4 border-b bg-background/60 backdrop-blur flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-base md:text-lg font-semibold">Payment Entry</div>
+                  <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {selectedSupplier?.name ? `Supplier: ${selectedSupplier.name}` : ""}
+                    {selectedSite?.siteName ? ` • Site: ${selectedSite.siteName}` : ""}
+                    {selectedIds.size ? ` • Selected Rows: ${selectedIds.size}` : ""}
+                  </div>
+                </div>
+
+                <Button size="sm" variant="outline" onClick={() => setOpenPayment(false)} disabled={paymentSaving}>
+                  Close
+                </Button>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-auto p-4 md:p-6 space-y-3">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Payment Amount</div>
+                  <Input
+                    placeholder="e.g. 5000"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    inputMode="decimal"
+                    className="h-10"
+                  />
+                  <div className="text-[11px] text-muted-foreground">
+                    Payment selected rows (oldest first) me auto adjust ho jayega.
+                  </div>
+                </div>
+              </div>
+
+              <div className="shrink-0 px-4 md:px-6 py-4 border-t bg-background/60 backdrop-blur flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={() => setOpenPayment(false)} disabled={paymentSaving}>
+                  Cancel
+                </Button>
+                <Button onClick={savePaymentEntry} disabled={paymentSaving} className="min-w-[120px]">
+                  {paymentSaving ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* ================= PURCHASE MODAL ================= */}
         <Dialog open={openPurchase} onOpenChange={setOpenPurchase}>
@@ -838,9 +1040,7 @@ export default function MaterialLedgerTable() {
                     Material Purchase Entry
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                    {selectedSupplier?.name
-                      ? `Supplier: ${selectedSupplier.name}`
-                      : ""}
+                    {selectedSupplier?.name ? `Supplier: ${selectedSupplier.name}` : ""}
                     {selectedSite?.siteName ? ` • Site: ${selectedSite.siteName}` : ""}
                   </div>
                 </div>
@@ -903,6 +1103,19 @@ export default function MaterialLedgerTable() {
           loading={bulkDeleteLoading}
           onCancel={() => setBulkDeleteOpen(false)}
           onConfirm={confirmBulkDelete}
+        />
+
+        {/* ✅ SINGLE DELETE CONFIRM */}
+        <DeleteConfirmDialog
+          open={singleDeleteOpen}
+          title="Delete this ledger row?"
+          description="This entry will be deleted. This action cannot be undone."
+          loading={singleDeleteLoading}
+          onCancel={() => {
+            setSingleDeleteOpen(false);
+            setSingleDeleteId("");
+          }}
+          onConfirm={confirmSingleDelete}
         />
       </CardContent>
     </Card>
