@@ -63,10 +63,7 @@ export async function createSite(data: any, files: any) {
       siteName: data.siteName,
       tenderNo: toNullIfEmpty(data.tenderNo),
       sdAmount: data.sdAmount ? toNumberOrNull(data.sdAmount) : null,
-
-      // ✅ FIX: departmentId safe trim (existing behavior same: allow null)
       departmentId: toNullIfEmpty(data.departmentId),
-
       estimate: {
         create: {
           cement: toNumberOrNull(data.cement),
@@ -84,9 +81,20 @@ export async function createSite(data: any, files: any) {
     },
   });
 
-  await uploadDocuments(site.id, files);
-  return site;
+  try {
+    await uploadDocuments(site.id, files);
+    return site;
+  } catch (err) {
+    // ✅ rollback: site delete -> cascade will remove estimate + documents
+    try {
+      await prisma.site.delete({ where: { id: site.id } });
+    } catch (e) {
+      console.error("Rollback delete failed:", e);
+    }
+    throw err;
+  }
 }
+
 
 /* =====================================================
    GET SITE BY ID (EDIT LOAD)
