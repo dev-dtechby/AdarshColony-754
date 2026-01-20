@@ -24,7 +24,7 @@ import fuelStationsRoutes from "./modules/fuel-stations/fuel-stations.routes";
 import fuelStationLedgerRoutes from "./modules/fuel-station-ledger/fuel-station-ledger.routes";
 import labourContractorLedgerRoutes from "./modules/labour-contractor-ledger/labour-contractor-ledger.routes";
 import vehicleRentRoutes from "./modules/vehicle-rent/vehicle-rent.routes";
-
+import dashboardRoutes from "./modules/dashboard/dashboard.routes";
 const app = express();
 
 // ====================
@@ -108,6 +108,7 @@ app.use("/api/fuel-stations", fuelStationsRoutes);
 app.use("/api/fuel-station-ledger", fuelStationLedgerRoutes);
 app.use("/api/labour-contractor-ledger", labourContractorLedgerRoutes);
 app.use("/api/vehicle-rent", vehicleRentRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 // ====================
 // 404 HANDLER
 // ====================

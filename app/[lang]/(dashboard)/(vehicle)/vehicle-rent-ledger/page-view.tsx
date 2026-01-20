@@ -13,9 +13,9 @@ export default function PageView({ trans }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="text-2xl font-medium text-default-800">
+      {/* <div className="text-2xl font-medium text-default-800">
         Vehicle Rent Ledger
-      </div>
+      </div> */}
 
       <VehicleRentLedgerTable baseUrl={baseUrl} />
     </div>
