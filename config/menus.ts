@@ -20,7 +20,9 @@ import {
   Trash2,
   Lock,
   Sliders,
+  Truck, // ✅ Vehicle Rent icon
 } from "lucide-react";
+
 export interface MenuItemProps {
   title: string;
   icon: any;
@@ -100,6 +102,14 @@ export const menusConfig = {
           icon: Fuel,
           href: "/fuels-ledger",
         },
+
+        // ✅ ADDED: Vehicle Rent
+        {
+          title: "Vehicle Rent",
+          icon: Truck,
+          href: "/vehicle-rent-ledger",
+        },
+
         {
           title: "Labour Contractor",
           icon: HardHat,
@@ -235,6 +245,10 @@ export const menusConfig = {
           { title: "Staff / Supervisor", href: "/staff-ledger", icon: UserCog },
           { title: "Material Supplier", href: "/material-supplier-ledger", icon: Factory },
           { title: "Fuel Station", href: "/fuels-ledger", icon: Fuel },
+
+          // ✅ ADDED: Vehicle Rent
+          { title: "Vehicle Rent", href: "/vehicle-rent-ledger", icon: Truck },
+
           { title: "Labour Contractor", href: "/labour-contractor-ledger", icon: HardHat },
           { title: "Other Party", href: "/party-ledger", icon: Users },
         ],
@@ -306,6 +320,10 @@ export const menusConfig = {
           { title: "Staff / Supervisor", href: "/staff-ledger", icon: UserCog },
           { title: "Material Supplier", href: "/material-supplier-ledger", icon: Factory },
           { title: "Fuel Station", href: "/fuels-ledger", icon: Fuel },
+
+          // ✅ ADDED: Vehicle Rent
+          { title: "Vehicle Rent", href: "/vehicle-rent-ledger", icon: Truck },
+
           { title: "Labour Contractor", href: "/labour-contractor-ledger", icon: HardHat },
           { title: "Other Party", href: "/party-ledger", icon: Users },
         ],

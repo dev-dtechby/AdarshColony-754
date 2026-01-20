@@ -1,10 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Site, LabourPaymentMode } from "./labour-ledger.types";
+
+const todayYmd = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 export default function AddPaymentDialog({
   open,
@@ -24,25 +37,34 @@ export default function AddPaymentDialog({
   onSaved: () => Promise<void> | void;
 }) {
   const [saving, setSaving] = useState(false);
+
   const [siteId, setSiteId] = useState("");
-  const [paymentDate, setPaymentDate] = useState(() => {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  });
+  const [paymentDate, setPaymentDate] = useState(todayYmd);
   const [amount, setAmount] = useState("");
   const [mode, setMode] = useState<LabourPaymentMode>("CASH");
   const [refNo, setRefNo] = useState("");
   const [through, setThrough] = useState("");
   const [remarks, setRemarks] = useState("");
 
+  const reset = () => {
+    setSiteId("");
+    setPaymentDate(todayYmd());
+    setAmount("");
+    setMode("CASH");
+    setRefNo("");
+    setThrough("");
+    setRemarks("");
+  };
+
   const save = async () => {
     if (!contractorId) return;
     if (!siteId) return alert("Site required");
-    const amt = Number(amount);
+
+    const amt = Number(String(amount ?? "").trim());
     if (!Number.isFinite(amt) || amt <= 0) return alert("Amount invalid");
+
+    const pDate = String(paymentDate ?? "").trim();
+    if (!pDate) return alert("Date required");
 
     try {
       setSaving(true);
@@ -52,29 +74,23 @@ export default function AddPaymentDialog({
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          contractorId,
-          siteId,
-          paymentDate,
+          contractorId: String(contractorId).trim(),
+          siteId: String(siteId).trim(),
+          paymentDate: pDate,
           amount: amt,
           mode,
-          refNo,
-          through,
-          remarks,
+          refNo: String(refNo ?? "").trim() || undefined,
+          through: String(through ?? "").trim() || undefined,
+          remarks: String(remarks ?? "").trim() || undefined,
         }),
       });
 
-      const json = await res.json().catch(() => null);
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.message || "Payment failed");
 
       await onSaved?.();
+      reset();
       onClose();
-
-      setSiteId("");
-      setAmount("");
-      setRefNo("");
-      setThrough("");
-      setRemarks("");
-      setMode("CASH");
     } catch (e: any) {
       alert(e?.message || "Failed");
     } finally {
@@ -83,10 +99,20 @@ export default function AddPaymentDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) {
+          reset();
+          onClose();
+        }
+      }}
+    >
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Add Payment — {contractorName || "Contractor"}</DialogTitle>
+          <DialogTitle>
+            Add Payment — {contractorName || "Contractor"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="grid gap-3">
@@ -94,6 +120,7 @@ export default function AddPaymentDialog({
             className="border bg-background px-3 py-2 rounded-md text-sm w-full"
             value={siteId}
             onChange={(e) => setSiteId(e.target.value)}
+            disabled={saving}
           >
             <option value="">Select Site</option>
             {sites.map((s) => (
@@ -103,19 +130,26 @@ export default function AddPaymentDialog({
             ))}
           </select>
 
-          <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+          <Input
+            type="date"
+            value={paymentDate}
+            onChange={(e) => setPaymentDate(e.target.value)}
+            disabled={saving}
+          />
 
           <Input
             placeholder="Amount"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             inputMode="decimal"
+            disabled={saving}
           />
 
           <select
             className="border bg-background px-3 py-2 rounded-md text-sm w-full"
             value={mode}
-            onChange={(e) => setMode(e.target.value as any)}
+            onChange={(e) => setMode(e.target.value as LabourPaymentMode)}
+            disabled={saving}
           >
             <option value="CASH">CASH</option>
             <option value="BANK">BANK</option>
@@ -124,14 +158,41 @@ export default function AddPaymentDialog({
             <option value="OTHER">OTHER</option>
           </select>
 
-          <Input placeholder="Ref No (UTR/Cheque)" value={refNo} onChange={(e) => setRefNo(e.target.value)} />
-          <Input placeholder="Through (Bank/Person)" value={through} onChange={(e) => setThrough(e.target.value)} />
-          <Input placeholder="Remarks (optional)" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+          <Input
+            placeholder="Ref No (UTR/Cheque)"
+            value={refNo}
+            onChange={(e) => setRefNo(e.target.value)}
+            disabled={saving}
+          />
+          <Input
+            placeholder="Through (Bank/Person)"
+            value={through}
+            onChange={(e) => setThrough(e.target.value)}
+            disabled={saving}
+          />
+          <Input
+            placeholder="Remarks (optional)"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            disabled={saving}
+          />
         </div>
 
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Payment"}</Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+            disabled={saving}
+          >
+            Cancel
+          </Button>
+          <Button type="button" onClick={save} disabled={saving}>
+            {saving ? "Saving..." : "Save Payment"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

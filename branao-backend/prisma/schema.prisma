@@ -52,6 +52,7 @@ model Site {
   fuelStationLedgers      FuelStationLedger[]
   labourContracts         LabourContract[]
   labourPayments          LabourPayment[]
+  vehicleRentLogs         VehicleRentLog[]
 
   @@index([departmentId])
   @@index([status])
@@ -248,6 +249,7 @@ model Ledger {
   paymentEntries          PaymentEntry[]
   staffExpenses           StaffExpense[]
   fuelStationLedgers      FuelStationLedger[]
+  vehicleRentVehicles     VehicleRentVehicle[]
 
   @@index([ledgerTypeId])
   @@index([siteId])
@@ -536,4 +538,64 @@ model LabourPayment {
   @@index([contractorId, paymentDate])
   @@index([siteId, paymentDate])
   @@index([contractId, paymentDate])
+}
+
+enum VehicleRentBasis {
+  HOURLY
+  MONTHLY
+}
+
+model VehicleRentVehicle {
+  id            String @id @default(uuid())
+  ownerLedgerId String
+  ownerLedger   Ledger @relation(fields: [ownerLedgerId], references: [id], onDelete: Cascade)
+
+  vehicleNo   String
+  vehicleName String
+
+  rentBasis   VehicleRentBasis @default(HOURLY)
+  hourlyRate  Decimal?         @db.Decimal(12, 2)
+  monthlyRate Decimal?         @db.Decimal(12, 2)
+
+  agreementUrl      String?
+  agreementPublicId String?
+
+  logs VehicleRentLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerLedgerId, vehicleNo])
+  @@index([ownerLedgerId])
+}
+
+model VehicleRentLog {
+  id String @id @default(uuid())
+
+  vehicleId String
+  vehicle   VehicleRentVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  entryDate DateTime
+
+  startMeter Decimal @db.Decimal(12, 2)
+  endMeter   Decimal @db.Decimal(12, 2)
+
+  workingHour Decimal @db.Decimal(12, 2) // end-start (stored)
+  dieselExp   Decimal @db.Decimal(12, 2) // optional exp
+
+  generatedAmt Decimal @db.Decimal(12, 2) // rent generated (expense basis)
+  paymentAmt   Decimal @db.Decimal(12, 2) // payment done
+  balanceAmt   Decimal @db.Decimal(12, 2) // generated-payment (stored)
+
+  remarks String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
+  @@index([vehicleId])
+  @@index([entryDate])
 }

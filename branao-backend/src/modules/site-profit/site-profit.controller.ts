@@ -9,7 +9,7 @@ const n = (v: any) => {
 const rowTotal = (r: any) => {
   // prefer DB totalAmt else qty*rate
   const t = r?.totalAmt;
-  if (t !== null && t !== undefined && !Number.isNaN(Number(t))) return n(t);
+  if (t !== null && t !== undefined && Number.isFinite(Number(t))) return n(t);
   return n(r?.qty) * n(r?.rate);
 };
 
@@ -20,7 +20,7 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
      * - No isDeleted filters anywhere.
      */
 
-    // 1) Base sites (with department + status)
+    // 1) Base sites
     const sites = await prisma.site.findMany({
       include: {
         department: { select: { name: true } },
@@ -30,9 +30,15 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
 
     const siteIds = sites.map((s) => s.id);
 
-    // 2) Expense sum from SiteExpense (manual only)
+    // If no sites, return empty quickly
+    if (!siteIds.length) {
+      return res.json({ success: true, count: 0, data: [] });
+    }
+
+    // 2) Manual SiteExpense sum
     const siteExpenseAgg = await prisma.siteExpense.groupBy({
       by: ["siteId"],
+      where: { siteId: { in: siteIds } },
       _sum: { amount: true },
     });
 
@@ -42,33 +48,36 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       expenseMap.set(r.siteId, Number(r._sum.amount || 0));
     }
 
-    // 3) ✅ AUTO Material cost from MaterialSupplierLedger (qty*rate OR totalAmt)
+    // 3) AUTO Material cost from MaterialSupplierLedger (qty*rate OR totalAmt)
     const matRows = await prisma.materialSupplierLedger.findMany({
-      where: {
-        siteId: { in: siteIds },
-      },
-      select: {
-        siteId: true,
-        qty: true,
-        rate: true,
-        totalAmt: true,
-      },
+      where: { siteId: { in: siteIds } },
+      select: { siteId: true, qty: true, rate: true, totalAmt: true },
     } as any);
 
     const materialCostMap = new Map<string, number>();
     for (const r of matRows) {
       if (!r.siteId) continue;
-      const prev = materialCostMap.get(r.siteId) || 0;
-      materialCostMap.set(r.siteId, prev + rowTotal(r));
+      materialCostMap.set(r.siteId, (materialCostMap.get(r.siteId) || 0) + rowTotal(r));
     }
 
-    // 4) ✅ Labour Contractor cost from LabourPayment (site wise sum)
-    // (Model name assumed: labourPayment based on your earlier schema/migration)
+    // 4) AUTO Vehicle Rent cost (generatedAmt) from VehicleRentLog
+    // (If model name differs, adjust accordingly)
+    const rentRows = await prisma.vehicleRentLog.findMany({
+      where: { siteId: { in: siteIds } },
+      select: { siteId: true, generatedAmt: true },
+    } as any);
+
+    const vehicleRentCostMap = new Map<string, number>();
+    for (const r of rentRows) {
+      if (!r.siteId) continue;
+      vehicleRentCostMap.set(r.siteId, (vehicleRentCostMap.get(r.siteId) || 0) + n(r.generatedAmt));
+    }
+
+    // 5) AUTO Labour Contractor cost from LabourPayment (site-wise sum)
+    // (Model name assumed: labourPayment)
     const labourAgg = await prisma.labourPayment.groupBy({
       by: ["siteId"],
-      where: {
-        siteId: { in: siteIds },
-      },
+      where: { siteId: { in: siteIds } },
       _sum: { amount: true },
     });
 
@@ -78,9 +87,10 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       labourCostMap.set(r.siteId, Number(r._sum.amount || 0));
     }
 
-    // 5) Received sum from SiteReceipt
+    // 6) Received sum from SiteReceipt
     const siteReceiptAgg = await prisma.siteReceipt.groupBy({
       by: ["siteId"],
+      where: { siteId: { in: siteIds } },
       _sum: { amount: true },
     });
 
@@ -90,9 +100,10 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       receiptMap.set(r.siteId, Number(r._sum.amount || 0));
     }
 
-    // 6) Voucher received sum (chequeAmt)
+    // 7) Voucher received sum (chequeAmt)
     const voucherAgg = await prisma.voucher.groupBy({
       by: ["siteId"],
+      where: { siteId: { in: siteIds } },
       _sum: { chequeAmt: true },
     });
 
@@ -102,11 +113,11 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       voucherMap.set(r.siteId, Number(r._sum.chequeAmt || 0));
     }
 
-    // 7) Staff IN sum (only those linked to a site)
+    // 8) Staff IN sum (linked to a site)
     const staffInAgg = await prisma.staffExpense.groupBy({
       by: ["siteId"],
       where: {
-        siteId: { not: null },
+        siteId: { in: siteIds },
         inAmount: { not: null },
       },
       _sum: { inAmount: true },
@@ -118,11 +129,11 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       staffInMap.set(r.siteId, Number(r._sum.inAmount || 0));
     }
 
-    // 8) Staff OUT rows NOT mirrored into SiteExpense yet
-    // (Assumes relation staffExpense -> siteExpense exists; same as your existing logic)
+    // 9) Staff OUT rows NOT mirrored into SiteExpense yet
+    // NOTE: This assumes you have relation field staffExpense.siteExpense
     const unMirroredStaffOut = await prisma.staffExpense.findMany({
       where: {
-        siteId: { not: null },
+        siteId: { in: siteIds },
         outAmount: { not: null },
         siteExpense: { is: null }, // only those not mirrored
       },
@@ -132,40 +143,55 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
     const staffOutUnmirroredMap = new Map<string, number>();
     for (const r of unMirroredStaffOut) {
       if (!r.siteId) continue;
-      const prev = staffOutUnmirroredMap.get(r.siteId) || 0;
-      staffOutUnmirroredMap.set(r.siteId, prev + Number(r.outAmount || 0));
+      staffOutUnmirroredMap.set(r.siteId, (staffOutUnmirroredMap.get(r.siteId) || 0) + n(r.outAmount));
     }
 
-    // 9) Build response rows
+    // 10) Build response
     const rows = sites.map((s) => {
       const siteId = s.id;
 
-      // ✅ expenses = manual SiteExpense + (unmirrored staff out) + AUTO material + AUTO labour payments
+      const manualExpense = expenseMap.get(siteId) || 0;
+      const staffOutNotMirrored = staffOutUnmirroredMap.get(siteId) || 0;
+      const materialPurchaseCost = materialCostMap.get(siteId) || 0;
+      const labourContractorCost = labourCostMap.get(siteId) || 0;
+      const vehicleRentCost = vehicleRentCostMap.get(siteId) || 0;
+
+      // ✅ Correct expense calculation (no duplicates, labour included)
       const expenses =
-        (expenseMap.get(siteId) || 0) +
-        (staffOutUnmirroredMap.get(siteId) || 0) +
-        (materialCostMap.get(siteId) || 0) +
-        (labourCostMap.get(siteId) || 0);
+        manualExpense +
+        staffOutNotMirrored +
+        materialPurchaseCost +
+        labourContractorCost +
+        vehicleRentCost;
 
-      const amountReceived =
-        (receiptMap.get(siteId) || 0) +
-        (voucherMap.get(siteId) || 0) +
-        (staffInMap.get(siteId) || 0);
+      const siteReceipt = receiptMap.get(siteId) || 0;
+      const voucherReceived = voucherMap.get(siteId) || 0;
+      const staffIn = staffInMap.get(siteId) || 0;
 
-      const profit = amountReceived - expenses;
+      const amountReceived = siteReceipt + voucherReceived + staffIn;
+      const profit = amountReceived - expenses; // negative => loss
 
       return {
         siteId,
         department: s.department?.name || "",
         siteName: s.siteName,
-        expenses,
-        amountReceived,
-        profit,
         status: s.status,
 
-        // optional debug / UI usage
-        materialPurchaseCost: materialCostMap.get(siteId) || 0,
-        labourContractorCost: labourCostMap.get(siteId) || 0,
+        amountReceived,
+        expenses,
+        profit,
+
+        // ✅ breakup for UI/debug (optional but very helpful)
+        breakup: {
+          manualSiteExpense: manualExpense,
+          staffOutUnmirrored: staffOutNotMirrored,
+          materialPurchaseCost,
+          labourContractorCost,
+          vehicleRentCost,
+          siteReceipt,
+          voucherReceived,
+          staffIn,
+        },
       };
     });
 
