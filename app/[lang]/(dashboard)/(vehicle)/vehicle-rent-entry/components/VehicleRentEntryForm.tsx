@@ -57,32 +57,33 @@ export default function VehicleRentEntryForm({
     return true;
   }, [ownerLedgerId, vehicleNo, vehicleName, rentBasis, hourlyRate, monthlyRate]);
 
+  /**
+   * ✅ Owner / Party dropdown should ONLY show Ledgers whose LedgerType.name === "VEHICLE_OWNER"
+   * (DB condition: Ledger.ledgerTypeId matches LedgerType.id where LedgerType.name = VEHICLE_OWNER)
+   */
   const loadLedgers = async () => {
     try {
       setLoadingLedgers(true);
+
       const res = await fetch(`${API.ledgers}?_ts=${Date.now()}`, {
         cache: "no-store",
         credentials: "include",
       });
+
       const json = await res.json().catch(() => ({}));
       const list = normalizeList(json) as Ledger[];
 
-      // Best-effort filter for vehicle owners (optional)
-      const filtered = list.filter((l) => {
-        const t = String(l?.ledgerType?.name || "").toLowerCase();
-        const nm = String(l?.name || "").toLowerCase();
-        return (
-          t.includes("vehicle") ||
-          t.includes("transport") ||
-          nm.includes("vehicle") ||
-          nm.includes("transport")
-        );
+      // ✅ STRICT FILTER: ONLY LedgerType = VEHICLE_OWNER
+      const ownersOnly = (list || []).filter((l) => {
+        const typeName = String((l as any)?.ledgerType?.name || "").trim().toUpperCase();
+        return typeName === "VEHICLE_OWNER";
       });
 
-      const finalList = (filtered.length ? filtered : list).sort((a, b) =>
-        (a.name || "").localeCompare(b.name || "")
-      );
-      setLedgers(finalList);
+      ownersOnly.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      setLedgers(ownersOnly);
+    } catch (e) {
+      console.error("Owner ledgers load failed:", e);
+      setLedgers([]);
     } finally {
       setLoadingLedgers(false);
     }
@@ -359,7 +360,13 @@ export default function VehicleRentEntryForm({
               disabled={!canSave || saving || deleting}
               className="gap-2"
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : isEdit ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isEdit ? (
+                <Save className="h-4 w-4" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
               {saving ? "Saving..." : isEdit ? "Update" : "Create"}
             </Button>
           </div>

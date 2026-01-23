@@ -17,6 +17,9 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 const LEDGERS_API = `${BASE_URL}/api/ledgers`;
 const SITE_API = `${BASE_URL}/api/sites`;
 
+// ✅ Vehicle Rent Vehicles (for dropdown by owner)
+const VEHICLE_RENT_VEHICLES_API = `${BASE_URL}/api/vehicle-rent/vehicles`;
+
 // ✅ bulk save endpoint
 const FUEL_BULK_API = `${BASE_URL}/api/fuel-station-ledger/bulk`;
 
@@ -31,8 +34,23 @@ type FuelStationLedger = {
   ledgerType?: { name?: string | null } | null;
 };
 
-type PurchaseType = "OWN_VEHICLE" | "RENT_VEHICLE";
+type VehicleOwnerLedger = {
+  id: string;
+  name: string;
+  ledgerType?: { name?: string | null } | null;
+};
 
+type VehicleRentVehicle = {
+  id: string;
+  ownerLedgerId: string;
+  vehicleNo: string;
+  vehicleName: string;
+  rentBasis?: string | null;
+  hourlyRate?: any;
+  monthlyRate?: any;
+};
+
+type PurchaseType = "OWN_VEHICLE" | "RENT_VEHICLE";
 type FuelType = "Diesel" | "Petrol" | "CNG" | "LPG" | "AdBlue" | "Other";
 
 type EntryRow = {
@@ -40,17 +58,17 @@ type EntryRow = {
 
   entryDate: Date | undefined;
 
-  // ✅ Slip/Receipt No (Through se pehle)
   slipNo: string;
-
   through: string;
 
   purchaseType: PurchaseType;
 
-  // ✅ Vehicle number
-  vehicleNumber: string;
+  // ✅ Rent selection state
+  ownerLedgerId: string; // VEHICLE_OWNER ledger id
+  vehicleId: string; // VehicleRentVehicle.id
 
-  // ✅ Vehicle name
+  // ✅ stored as before
+  vehicleNumber: string;
   vehicleName: string;
 
   fuelType: FuelType;
@@ -95,8 +113,16 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
   const [fuelStations, setFuelStations] = useState<FuelStationLedger[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
 
+  // ✅ Vehicle Owners from Ledgers (ledgerType = VEHICLE_OWNER)
+  const [vehicleOwners, setVehicleOwners] = useState<VehicleOwnerLedger[]>([]);
+
+  // ✅ Vehicles cache by ownerLedgerId
+  const [vehiclesByOwner, setVehiclesByOwner] = useState<Record<string, VehicleRentVehicle[]>>({});
+  const [loadingVehiclesOwnerId, setLoadingVehiclesOwnerId] = useState<string>("");
+
   const [loadingStations, setLoadingStations] = useState(false);
   const [loadingSites, setLoadingSites] = useState(false);
+  const [loadingOwners, setLoadingOwners] = useState(false);
 
   /* ================= ROWS ================= */
   const [rows, setRows] = useState<EntryRow[]>([
@@ -106,6 +132,10 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
       slipNo: "",
       through: "",
       purchaseType: "OWN_VEHICLE",
+
+      ownerLedgerId: "",
+      vehicleId: "",
+
       vehicleNumber: "",
       vehicleName: "",
       fuelType: "Diesel",
@@ -152,7 +182,6 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
       const json = await res.json().catch(() => ({}));
       const list: FuelStationLedger[] = normalizeList(json);
 
-      // ✅ Filter (safe). If ledgerType missing OR filter empty -> fallback to all.
       const filtered = list.filter((l) => {
         const t = String(l?.ledgerType?.name || "").toLowerCase();
         const nm = String(l?.name || "").toLowerCase();
@@ -178,8 +207,74 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
     }
   };
 
+  // ✅ Vehicle Owners from /api/ledgers where ledgerType.name === "VEHICLE_OWNER"
+  const loadVehicleOwners = async () => {
+    try {
+      setLoadingOwners(true);
+
+      const res = await fetch(`${LEDGERS_API}?_ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      const json = await res.json().catch(() => ({}));
+      const list: any[] = normalizeList(json);
+
+      const owners = (list || [])
+        .filter((l) => String(l?.ledgerType?.name || "").trim().toUpperCase() === "VEHICLE_OWNER")
+        .map((l) => ({ id: l.id, name: l.name, ledgerType: l.ledgerType || null }))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+      setVehicleOwners(owners);
+    } catch (e) {
+      console.error("❌ Vehicle owners load failed:", e);
+      setVehicleOwners([]);
+    } finally {
+      setLoadingOwners(false);
+    }
+  };
+
+  // ✅ Vehicles list by selected ownerLedgerId
+  const loadVehiclesForOwner = async (ownerLedgerId: string) => {
+    const oid = String(ownerLedgerId || "").trim();
+    if (!oid) return;
+
+    // already cached
+    if (Array.isArray(vehiclesByOwner[oid]) && vehiclesByOwner[oid].length) return;
+
+    try {
+      setLoadingVehiclesOwnerId(oid);
+
+      const res = await fetch(
+        `${VEHICLE_RENT_VEHICLES_API}?ownerLedgerId=${encodeURIComponent(oid)}&_ts=${Date.now()}`,
+        { cache: "no-store", credentials: "include" }
+      );
+
+      const json = await res.json().catch(() => ({}));
+      const list = normalizeList(json) as VehicleRentVehicle[];
+
+      const finalList = (list || [])
+        .map((v) => ({
+          id: v.id,
+          ownerLedgerId: v.ownerLedgerId,
+          vehicleNo: v.vehicleNo,
+          vehicleName: v.vehicleName,
+          rentBasis: (v as any).rentBasis ?? null,
+          hourlyRate: (v as any).hourlyRate ?? null,
+          monthlyRate: (v as any).monthlyRate ?? null,
+        }))
+        .sort((a, b) => String(a.vehicleNo || "").localeCompare(String(b.vehicleNo || "")));
+
+      setVehiclesByOwner((prev) => ({ ...prev, [oid]: finalList }));
+    } catch (e) {
+      console.error("❌ Vehicles load failed:", e);
+      setVehiclesByOwner((prev) => ({ ...prev, [oid]: [] }));
+    } finally {
+      setLoadingVehiclesOwnerId("");
+    }
+  };
+
   useEffect(() => {
-    // ✅ Debug hint
     if (!BASE_URL) {
       console.warn(
         "⚠️ NEXT_PUBLIC_API_BASE_URL is empty. Set it to http://localhost:5000 and restart Next dev server."
@@ -188,6 +283,7 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
 
     loadFuelStations();
     loadSites();
+    loadVehicleOwners();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -205,6 +301,10 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
         slipNo: "",
         through: "",
         purchaseType: "OWN_VEHICLE",
+
+        ownerLedgerId: "",
+        vehicleId: "",
+
         vehicleNumber: "",
         vehicleName: "",
         fuelType: "Diesel",
@@ -229,6 +329,10 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
         slipNo: "",
         through: "",
         purchaseType: "OWN_VEHICLE",
+
+        ownerLedgerId: "",
+        vehicleId: "",
+
         vehicleNumber: "",
         vehicleName: "",
         fuelType: "Diesel",
@@ -241,17 +345,22 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
 
   /* ================= VALIDATION ================= */
   const rowValid = (r: EntryRow) => {
-    return (
+    const baseOk =
       !!r.entryDate &&
       r.slipNo.trim() &&
       r.through.trim() &&
       !!r.purchaseType &&
-      r.vehicleNumber.trim() &&
-      r.vehicleName.trim() &&
       !!r.fuelType &&
       isPositiveNumber(r.qty) &&
-      isPositiveNumber(r.rate)
-    );
+      isPositiveNumber(r.rate);
+
+    if (!baseOk) return false;
+
+    if (r.purchaseType === "RENT_VEHICLE") {
+      return !!r.ownerLedgerId && !!r.vehicleId && r.vehicleNumber.trim() && r.vehicleName.trim();
+    }
+
+    return r.vehicleNumber.trim() && r.vehicleName.trim();
   };
 
   const canSave = useMemo(() => {
@@ -286,15 +395,9 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
     try {
       const fd = new FormData();
 
-      // global defaults
       fd.append("entryDate", new Date().toISOString());
-
-      // ✅ Send ledgerId (primary)
       fd.append("ledgerId", ledgerId);
-
-      // ✅ backward compatible (controller also accepts fuelStationId)
       fd.append("fuelStationId", ledgerId);
-
       fd.append("siteId", siteId);
 
       const payloadRows = rows.map((r) => ({
@@ -303,13 +406,15 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
         slipNo: r.slipNo.trim(),
         through: r.through.trim(),
         purchaseType: r.purchaseType,
+
         vehicleNumber: r.vehicleNumber.trim(),
         vehicleName: r.vehicleName.trim(),
+
         fuelType: r.fuelType,
         qty: n(r.qty),
         rate: n(r.rate),
         amount: n(r.qty) * n(r.rate),
-        remarks: r.remark?.trim() || null, // ✅ backend expects "remarks"
+        remarks: r.remark?.trim() || null,
       }));
 
       fd.append("rows", JSON.stringify(payloadRows));
@@ -343,7 +448,6 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
       }}
     >
       <Card className="border rounded-xl overflow-hidden">
-        {/* HEADER */}
         <CardHeader className="pb-3 border-b bg-background/60 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -401,9 +505,7 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                   value={siteId}
                   onChange={(e) => setSiteId(e.target.value)}
                 >
-                  <option value="">
-                    {loadingSites ? "Loading sites..." : "Select Site"}
-                  </option>
+                  <option value="">{loadingSites ? "Loading sites..." : "Select Site"}</option>
                   {sites.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.siteName}
@@ -429,9 +531,7 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
               </div>
               <div className="p-2 rounded-lg border bg-background/30">
                 <p className="text-[10px] md:text-[11px] text-default-700">Total Amount</p>
-                <p className="text-base md:text-lg font-bold leading-tight">
-                  ₹ {totals.totalAmt.toFixed(2)}
-                </p>
+                <p className="text-base md:text-lg font-bold leading-tight">₹ {totals.totalAmt.toFixed(2)}</p>
               </div>
             </div>
           </div>
@@ -474,13 +574,25 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                           const ok = rowValid(r);
                           const amount = n(r.qty) * n(r.rate);
 
+                          const ownerVehicles =
+                            r.ownerLedgerId && vehiclesByOwner[r.ownerLedgerId]
+                              ? vehiclesByOwner[r.ownerLedgerId]
+                              : [];
+
+                          // ✅ Single dropdown value for PurchaseType column
+                          // - OWN_VEHICLE
+                          // - RENT:<ownerLedgerId>
+                          const purchaseSelectValue =
+                            r.purchaseType === "OWN_VEHICLE"
+                              ? "OWN_VEHICLE"
+                              : r.ownerLedgerId
+                              ? `RENT:${r.ownerLedgerId}`
+                              : "RENT:"; // placeholder if rent but owner not selected yet
+
                           return (
                             <tr
                               key={r.id}
-                              className={cn(
-                                "border-t transition",
-                                ok ? "bg-green-500/5" : "hover:bg-primary/5"
-                              )}
+                              className={cn("border-t transition", ok ? "bg-green-500/5" : "hover:bg-primary/5")}
                             >
                               <td className="px-2 py-2 text-center align-top">
                                 <button
@@ -491,9 +603,7 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                 >
                                   <X className="h-4 w-4" />
                                 </button>
-                                <div className="text-[10px] text-muted-foreground mt-1">
-                                  {idx + 1}
-                                </div>
+                                <div className="text-[10px] text-muted-foreground mt-1">{idx + 1}</div>
                               </td>
 
                               <td className="px-2 py-2 align-top">
@@ -512,11 +622,7 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                   </PopoverTrigger>
 
                                   <PopoverContent className="p-0 z-[9999]" align="start" side="bottom" sideOffset={8}>
-                                    <Calendar
-                                      mode="single"
-                                      selected={r.entryDate}
-                                      onSelect={(d) => updateRow(r.id, { entryDate: d })}
-                                    />
+                                    <Calendar mode="single" selected={r.entryDate} onSelect={(d) => updateRow(r.id, { entryDate: d })} />
                                   </PopoverContent>
                                 </Popover>
                               </td>
@@ -539,34 +645,126 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                 />
                               </td>
 
+                              {/* ✅ PurchaseType column: ONLY ONE dropdown
+                                  - Own Vehicle
+                                  - (Rent Owners list) from LedgerType = VEHICLE_OWNER
+                               */}
                               <td className="px-2 py-2 align-top">
                                 <select
-                                  className="border px-2 py-1.5 rounded-md bg-background w-44 h-8 text-sm"
-                                  value={r.purchaseType}
-                                  onChange={(e) =>
-                                    updateRow(r.id, { purchaseType: e.target.value as PurchaseType })
-                                  }
+                                  className="border px-2 py-1.5 rounded-md bg-background w-52 h-8 text-sm"
+                                  value={purchaseSelectValue}
+                                  onChange={(e) => {
+                                    const v = String(e.target.value || "");
+
+                                    // OWN
+                                    if (v === "OWN_VEHICLE") {
+                                      updateRow(r.id, {
+                                        purchaseType: "OWN_VEHICLE",
+                                        ownerLedgerId: "",
+                                        vehicleId: "",
+                                        // allow manual typing (keep current if user already typed)
+                                        vehicleNumber: r.vehicleNumber || "",
+                                        vehicleName: r.vehicleName || "",
+                                      });
+                                      return;
+                                    }
+
+                                    // RENT:<ownerLedgerId>
+                                    if (v.startsWith("RENT:")) {
+                                      const ownerId = v.slice(5).trim();
+
+                                      updateRow(r.id, {
+                                        purchaseType: "RENT_VEHICLE",
+                                        ownerLedgerId: ownerId,
+                                        vehicleId: "",
+                                        vehicleNumber: "",
+                                        vehicleName: "",
+                                      });
+
+                                      if (ownerId) loadVehiclesForOwner(ownerId);
+                                    }
+                                  }}
                                 >
                                   <option value="OWN_VEHICLE">Own Vehicle</option>
-                                  <option value="RENT_VEHICLE">Rent Vehicle</option>
+
+                                  {/* Placeholder + owners group */}
+                                  <optgroup label="Rent Vehicle (Select Owner)">
+                                    <option value="RENT:" disabled>
+                                      {loadingOwners ? "Loading owners..." : "Select Vehicle Owner"}
+                                    </option>
+                                    {vehicleOwners.map((o) => (
+                                      <option key={o.id} value={`RENT:${o.id}`}>
+                                        {o.name}
+                                      </option>
+                                    ))}
+                                  </optgroup>
                                 </select>
                               </td>
 
+                              {/* ✅ Vehicle Number column:
+                                  - OWN => manual input
+                                  - RENT => vehicle dropdown by selected ownerLedgerId
+                               */}
                               <td className="px-2 py-2 align-top">
-                                <Input
-                                  placeholder="CG 04 AB 1234"
-                                  value={r.vehicleNumber}
-                                  onChange={(e) => updateRow(r.id, { vehicleNumber: e.target.value })}
-                                  className="h-8 w-48 text-sm"
-                                />
+                                {r.purchaseType === "RENT_VEHICLE" ? (
+                                  <select
+                                    className="border px-2 py-1.5 rounded-md bg-background w-48 h-8 text-sm"
+                                    value={r.vehicleId}
+                                    disabled={!r.ownerLedgerId}
+                                    onChange={(e) => {
+                                      const vid = e.target.value;
+
+                                      const v = ownerVehicles.find((x) => x.id === vid);
+                                      if (!v) {
+                                        updateRow(r.id, {
+                                          vehicleId: "",
+                                          vehicleNumber: "",
+                                          vehicleName: "",
+                                        });
+                                        return;
+                                      }
+
+                                      updateRow(r.id, {
+                                        vehicleId: v.id,
+                                        vehicleNumber: String(v.vehicleNo || "").trim(),
+                                        vehicleName: String(v.vehicleName || "").trim(),
+                                      });
+                                    }}
+                                  >
+                                    <option value="">
+                                      {!r.ownerLedgerId
+                                        ? "Select owner first"
+                                        : loadingVehiclesOwnerId === r.ownerLedgerId
+                                        ? "Loading vehicles..."
+                                        : "Select Vehicle"}
+                                    </option>
+                                    {ownerVehicles.map((v) => (
+                                      <option key={v.id} value={v.id}>
+                                        {v.vehicleNo} - {v.vehicleName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <Input
+                                    placeholder="CG 04 AB 1234"
+                                    value={r.vehicleNumber}
+                                    onChange={(e) => updateRow(r.id, { vehicleNumber: e.target.value })}
+                                    className="h-8 w-48 text-sm"
+                                  />
+                                )}
                               </td>
 
+                              {/* ✅ Vehicle column:
+                                  - RENT => auto-filled readOnly
+                                  - OWN => editable input
+                               */}
                               <td className="px-2 py-2 align-top">
                                 <Input
                                   placeholder="Vehicle name"
                                   value={r.vehicleName}
                                   onChange={(e) => updateRow(r.id, { vehicleName: e.target.value })}
                                   className="h-8 w-44 text-sm"
+                                  readOnly={r.purchaseType === "RENT_VEHICLE"}
                                 />
                               </td>
 

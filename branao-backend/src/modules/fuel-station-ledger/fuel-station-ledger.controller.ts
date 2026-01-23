@@ -77,19 +77,31 @@ export const createBulkFuelLedger = async (req: Request, res: Response) => {
     }
 
     // ✅ normalize row fields lightly (service does strict validation)
-    const cleanedRows = rows.map((r: any) => ({
-      ...r,
-      entryDate: r?.entryDate ? String(r.entryDate) : undefined,
-      through: r?.through != null ? String(r.through) : null,
-      purchaseType: normPurchaseType(r?.purchaseType),
-      vehicleNumber: r?.vehicleNumber != null ? String(r.vehicleNumber) : "",
-      vehicleName: r?.vehicleName != null ? String(r.vehicleName) : null,
-      fuelType: r?.fuelType != null ? String(r.fuelType) : "",
-      qty: n(r?.qty),
-      rate: n(r?.rate),
-      slipNo: r?.slipNo != null ? String(r.slipNo) : null,
-      remarks: r?.remarks != null ? String(r.remarks) : null,
-    }));
+    const cleanedRows = rows.map((r: any) => {
+      const purchaseType = normPurchaseType(r?.purchaseType);
+
+      return {
+        ...r,
+        entryDate: r?.entryDate ? String(r.entryDate) : undefined,
+        through: r?.through != null ? String(r.through) : null,
+
+        purchaseType,
+
+        // ✅ NEW: allow ownerLedgerId in payload (required by service for RENT_VEHICLE)
+        ownerLedgerId:
+          r?.ownerLedgerId != null && String(r.ownerLedgerId).trim()
+            ? String(r.ownerLedgerId).trim()
+            : null,
+
+        vehicleNumber: r?.vehicleNumber != null ? String(r.vehicleNumber) : "",
+        vehicleName: r?.vehicleName != null ? String(r.vehicleName) : null,
+        fuelType: r?.fuelType != null ? String(r.fuelType) : "",
+        qty: n(r?.qty),
+        rate: n(r?.rate),
+        slipNo: r?.slipNo != null ? String(r.slipNo) : null,
+        remarks: r?.remarks != null ? String(r.remarks) : null,
+      };
+    });
 
     const result = await createBulk({
       ledgerId,
@@ -123,6 +135,12 @@ export const updateFuelLedgerRow = async (req: Request, res: Response) => {
 
     // optional normalize
     if (patch.purchaseType != null) patch.purchaseType = normPurchaseType(patch.purchaseType);
+
+    // ✅ NEW: normalize ownerLedgerId (allow null)
+    if (patch.ownerLedgerId !== undefined) {
+      const s = String(patch.ownerLedgerId || "").trim();
+      patch.ownerLedgerId = s ? s : null;
+    }
 
     const updated = await updateOne(id, patch);
     return res.json({ success: true, data: updated });

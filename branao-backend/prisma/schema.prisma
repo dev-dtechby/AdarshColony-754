@@ -243,18 +243,27 @@ model Ledger {
   deletedBy               String?
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
+
   ledgerType              LedgerType               @relation(fields: [ledgerTypeId], references: [id])
   site                    Site?                    @relation(fields: [siteId], references: [id])
+
   materialSupplierLedgers MaterialSupplierLedger[] @relation("LedgerMaterialSupplierLedgers")
   paymentEntries          PaymentEntry[]
   staffExpenses           StaffExpense[]
+
+  // ✅ Existing: fuel station ledger main ledgerId relation
   fuelStationLedgers      FuelStationLedger[]
+
+  // ✅ NEW: fuel station ledger owner relation (RENT_VEHICLE ownerLedgerId)
+  fuelStationOwnerLedgers FuelStationLedger[]      @relation("FuelStationLedgerOwner")
+
   vehicleRentVehicles     VehicleRentVehicle[]
 
   @@index([ledgerTypeId])
   @@index([siteId])
   @@index([isDeleted])
 }
+
 
 /// /////////////////////////////////////////////
 /// =============== STAFF EXPENSE ==============
@@ -437,6 +446,10 @@ model FuelStationLedger {
   through      String?
   purchaseType FuelPurchaseType
 
+  // ✅ NEW: Vehicle Owner Ledger (only for RENT_VEHICLE)
+  ownerLedgerId String?
+  ownerLedger   Ledger? @relation("FuelStationLedgerOwner", fields: [ownerLedgerId], references: [id], onDelete: SetNull)
+
   vehicleNumber String
   vehicleName   String?
 
@@ -453,7 +466,9 @@ model FuelStationLedger {
   @@index([ledgerId])
   @@index([siteId])
   @@index([entryDate])
+  @@index([ownerLedgerId]) // ✅ NEW
 }
+
 
 /**
  * =========================================================

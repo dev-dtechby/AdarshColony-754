@@ -31,6 +31,8 @@ type LedgerLite = {
   address?: string | null;
 };
 
+type VehicleOwnerLite = { id: string; name: string };
+
 type PaymentDisplayRow = {
   id: string;
   entryDate: string;
@@ -41,8 +43,7 @@ type PaymentDisplayRow = {
   slipNo?: string | null;
   through?: string | null;
 
-  // amounts
-  amount?: number | null; // show in "Received" column if you want (keeping 0)
+  amount?: number | null;
   payment: number;
 
   remarks?: string | null;
@@ -51,10 +52,14 @@ type PaymentDisplayRow = {
 };
 
 type FuelDisplayRow = FuelLedgerRow & {
-  siteName?: string | null; // convenience for UI
-  ledgerName?: string | null; // convenience for UI
-  payment?: number | null; // keep parity with table columns
+  siteName?: string | null;
+  ledgerName?: string | null;
+  payment?: number | null;
   __type: "FUEL";
+
+  // ✅ carry owner info for UI + Edit/Bulk Edit
+  ownerLedgerId?: string | null;
+  ownerLedgerName?: string | null;
 };
 
 type DisplayRow = FuelDisplayRow | PaymentDisplayRow;
@@ -87,6 +92,35 @@ const fmtDate = (v: any) => {
 const includesText = (hay: string, needle: string) =>
   hay.toLowerCase().includes(needle.toLowerCase());
 
+const norm = (v: any) => String(v ?? "").trim();
+const upper = (v: any) => norm(v).toUpperCase();
+
+// ✅ Extract ownerLedgerId from purchaseType when UI saves ownerId directly
+// Supports patterns: "<id>", "RENT:<id>", "RENT|<id>", "OWNER:<id>", etc.
+const extractOwnerIdFromPurchaseType = (purchaseTypeRaw: string) => {
+  const s = norm(purchaseTypeRaw);
+  if (!s) return "";
+
+  const u = s.toUpperCase();
+
+  if (u.startsWith("RENT:")) return s.slice(5).trim();
+  if (u.startsWith("OWNER:")) return s.slice(6).trim();
+
+  // allow separators
+  const parts = s.split(/[|,:]/).map((x) => x.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const head = parts[0].toUpperCase();
+    if (head === "RENT" || head === "RENTAL" || head === "OWNER") return parts[1];
+  }
+
+  // if it's not a known enum, assume it could be an id itself
+  if (u !== "OWN_VEHICLE" && u !== "RENT_VEHICLE" && u !== "OWN" && u !== "RENT" && u !== "RENTAL") {
+    return s;
+  }
+
+  return "";
+};
+
 /* ====================== MAIN COMPONENT ====================== */
 export default function FuelLedgerTable() {
   const [globalSearch, setGlobalSearch] = useState("");
@@ -98,6 +132,9 @@ export default function FuelLedgerTable() {
   // dropdown lists
   const [fuelStations, setFuelStations] = useState<FuelStation[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
+
+  // ✅ VEHICLE_OWNER map
+  const [vehicleOwners, setVehicleOwners] = useState<VehicleOwnerLite[]>([]);
 
   // rows
   const [rows, setRows] = useState<DisplayRow[]>([]);
@@ -128,6 +165,12 @@ export default function FuelLedgerTable() {
     [sites, selectedSiteId]
   );
 
+  const vehicleOwnerMap = useMemo(() => {
+    const m = new Map<string, string>();
+    vehicleOwners.forEach((o) => m.set(o.id, o.name));
+    return m;
+  }, [vehicleOwners]);
+
   /* ================= LOAD DROPDOWNS ================= */
   const loadSites = async () => {
     try {
@@ -138,7 +181,6 @@ export default function FuelLedgerTable() {
       const json = await res.json().catch(() => ({}));
       const list: Site[] = normalizeList(json);
 
-      // If your Site has isDeleted in API, filter it safely
       const active = list.filter((s: any) => !s?.isDeleted);
       active.sort((a, b) => (a.siteName || "").localeCompare(b.siteName || ""));
       setSites(active);
@@ -157,7 +199,6 @@ export default function FuelLedgerTable() {
       const json = await res.json().catch(() => ({}));
       const list: LedgerLite[] = normalizeList(json);
 
-      // filter fuel station ledgers (fallback to all if filter results empty)
       const filtered = list.filter((l) => {
         const t = String(l?.ledgerType?.name || "").toLowerCase();
         const nm = String(l?.name || "").toLowerCase();
@@ -187,6 +228,28 @@ export default function FuelLedgerTable() {
     }
   };
 
+  // ✅ VEHICLE_OWNER list (used for Purchase Type column display)
+  const loadVehicleOwners = async () => {
+    try {
+      const res = await fetch(`${LEDGERS_API}?_ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const json = await res.json().catch(() => ({}));
+      const list: LedgerLite[] = normalizeList(json);
+
+      const owners = (list || [])
+        .filter((l) => upper(l?.ledgerType?.name) === "VEHICLE_OWNER")
+        .map((l) => ({ id: l.id, name: l.name }))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+      setVehicleOwners(owners);
+    } catch (e) {
+      console.error("Vehicle owners load failed", e);
+      setVehicleOwners([]);
+    }
+  };
+
   useEffect(() => {
     if (!BASE_URL) {
       console.warn(
@@ -195,6 +258,7 @@ export default function FuelLedgerTable() {
     }
     loadFuelStationsFromLedgers();
     loadSites();
+    loadVehicleOwners();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -221,46 +285,83 @@ export default function FuelLedgerTable() {
       const fuelJson = await fuelRes.json().catch(() => ({}));
       const fuelListRaw: any[] = normalizeList(fuelJson);
 
-      const fuelRows: FuelDisplayRow[] = fuelListRaw.map((r: any) => ({
-        // ---- MUST MATCH fuel-ledger.types ----
-        id: r.id,
-        entryDate: r.entryDate || r.createdAt || new Date().toISOString(),
+      const fuelRows: FuelDisplayRow[] = fuelListRaw.map((r: any) => {
+        const purchaseTypeRaw = norm(r.purchaseType);
 
-        fuelStationId: r.fuelStationId ?? r.ledgerId ?? null,
-        fuelStation: r.fuelStation
-          ? { id: r.fuelStation.id, name: r.fuelStation.name }
-          : r.ledger
-          ? { id: r.ledger.id, name: r.ledger.name }
-          : selectedFuelStation
-          ? { id: selectedFuelStation.id, name: selectedFuelStation.name }
-          : null,
+        // ✅ 1) try to find owner from explicit backend fields
+        const directOwnerLedgerId =
+          r.ownerLedgerId ??
+          r.vehicleOwnerLedgerId ??
+          r.vehicleOwnerId ??
+          r.ownerId ??
+          r.ownerLedger?.id ??
+          r.vehicleOwner?.id ??
+          r.owner?.id ??
+          null;
 
-        siteId: r.siteId ?? r.site?.id ?? null,
-        site: r.site ? { id: r.site.id, siteName: r.site.siteName } : null,
+        const directOwnerLedgerName =
+          r.ownerLedgerName ??
+          r.vehicleOwnerName ??
+          r.ownerName ??
+          r.ownerLedger?.name ??
+          r.vehicleOwner?.name ??
+          r.owner?.name ??
+          null;
 
-        slipNo: r.slipNo ?? null,
-        through: r.through ?? null,
+        // ✅ 2) fallback: purchaseType stores ownerLedgerId directly OR with prefix (RENT:ID)
+        const ownerFromPurchaseType = extractOwnerIdFromPurchaseType(purchaseTypeRaw);
 
-        purchaseType: r.purchaseType ?? null,
+        // ✅ final owner id = direct field OR parsed purchaseType
+        const finalOwnerId = directOwnerLedgerId || ownerFromPurchaseType || null;
 
-        vehicleNumber: r.vehicleNumber ?? null,
-        vehicleName: r.vehicleName ?? null,
+        // ✅ final owner name = direct name OR map lookup
+        const finalOwnerName =
+          directOwnerLedgerName ||
+          (finalOwnerId ? vehicleOwnerMap.get(String(finalOwnerId)) : null) ||
+          null;
 
-        fuelType: r.fuelType ?? null,
+        return {
+          id: r.id,
+          entryDate: r.entryDate || r.createdAt || new Date().toISOString(),
 
-        qty: r.qty != null ? num(r.qty) : null,
-        rate: r.rate != null ? num(r.rate) : null,
-        amount: r.amount != null ? num(r.amount) : num(r.qty) * num(r.rate),
+          fuelStationId: r.fuelStationId ?? r.ledgerId ?? null,
+          fuelStation: r.fuelStation
+            ? { id: r.fuelStation.id, name: r.fuelStation.name }
+            : r.ledger
+            ? { id: r.ledger.id, name: r.ledger.name }
+            : selectedFuelStation
+            ? { id: selectedFuelStation.id, name: selectedFuelStation.name }
+            : null,
 
-        remarks: r.remarks ?? null,
+          siteId: r.siteId ?? r.site?.id ?? null,
+          site: r.site ? { id: r.site.id, siteName: r.site.siteName } : null,
 
-        // ---- UI helpers ----
-        siteName: r.site?.siteName ?? r.siteName ?? null,
-        ledgerName:
-          r.fuelStation?.name ?? r.ledger?.name ?? selectedFuelStation?.name ?? null,
-        payment: 0,
-        __type: "FUEL",
-      }));
+          slipNo: r.slipNo ?? null,
+          through: r.through ?? null,
+
+          purchaseType: r.purchaseType ?? null,
+
+          vehicleNumber: r.vehicleNumber ?? null,
+          vehicleName: r.vehicleName ?? null,
+
+          fuelType: r.fuelType ?? null,
+
+          qty: r.qty != null ? num(r.qty) : null,
+          rate: r.rate != null ? num(r.rate) : null,
+          amount: r.amount != null ? num(r.amount) : num(r.qty) * num(r.rate),
+
+          remarks: r.remarks ?? null,
+
+          siteName: r.site?.siteName ?? r.siteName ?? null,
+          ledgerName: r.fuelStation?.name ?? r.ledger?.name ?? selectedFuelStation?.name ?? null,
+          payment: 0,
+          __type: "FUEL",
+
+          // ✅ important for UI + edit/bulk edit
+          ownerLedgerId: finalOwnerId ? String(finalOwnerId) : null,
+          ownerLedgerName: finalOwnerName ? String(finalOwnerName) : null,
+        };
+      });
 
       // 2) Payment rows (optional)
       let paymentRows: PaymentDisplayRow[] = [];
@@ -304,7 +405,6 @@ export default function FuelLedgerTable() {
         // ignore payments if endpoint differs
       }
 
-      // Combine + sort by date
       const merged: DisplayRow[] = [...fuelRows, ...paymentRows].sort((a, b) => {
         const da = new Date(a.entryDate as any).getTime();
         const db = new Date(b.entryDate as any).getTime();
@@ -327,6 +427,40 @@ export default function FuelLedgerTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFuelStationId, selectedSiteId]);
 
+  /* ================= Purchase Type Label (single source of truth) ================= */
+  const purchaseTypeLabelOf = (row: DisplayRow) => {
+    const isPayment = (row as any).__type === "PAYMENT";
+    if (isPayment) return "";
+
+    const ptRaw = norm((row as any).purchaseType);
+    const pt = upper(ptRaw);
+
+    // Own vehicle
+    if (pt === "OWN_VEHICLE" || pt === "OWN") return "Own";
+
+    // Rental: show owner name if available
+    // IMPORTANT: In your updated FuelPurchaseForm, purchaseType for RENT can be ownerLedgerId directly.
+    const ownerName =
+      (row as any).ownerLedgerName ||
+      ((row as any).ownerLedgerId ? vehicleOwnerMap.get(String((row as any).ownerLedgerId)) : "") ||
+      "";
+
+    // If purchaseType is explicit rent enum
+    if (pt === "RENT_VEHICLE" || pt === "RENT" || pt === "RENTAL" || pt.startsWith("RENT:")) {
+      return ownerName || "Rental";
+    }
+
+    // If purchaseType itself is an id (owner ledger id), map it to name
+    const ownerIdFromPT = extractOwnerIdFromPurchaseType(ptRaw);
+    if (ownerIdFromPT) {
+      const nm = vehicleOwnerMap.get(String(ownerIdFromPT)) || ownerName;
+      return nm || "Rental";
+    }
+
+    // fallback
+    return ptRaw || "";
+  };
+
   /* ================= FILTERED / SEARCHED ================= */
   const filteredRows = useMemo(() => {
     if (!rows.length) return [];
@@ -344,7 +478,7 @@ export default function FuelLedgerTable() {
         (r as any).siteName || "",
         r.slipNo || "",
         r.through || "",
-        (r as any).purchaseType || "",
+        purchaseTypeLabelOf(r),
         (r as any).vehicleNumber || "",
         (r as any).vehicleName || "",
         fuelType,
@@ -356,7 +490,8 @@ export default function FuelLedgerTable() {
 
       return includesText(blob, q);
     });
-  }, [rows, globalSearch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, globalSearch, vehicleOwners]); // re-run when owner map changes
 
   /* ================= TOTALS ================= */
   const totals = useMemo(() => {
@@ -398,7 +533,6 @@ export default function FuelLedgerTable() {
       const next = { ...prev };
       const target = !isAllVisibleSelected;
 
-      // only select FUEL rows
       filteredRows.forEach((r) => {
         if ((r as any).__type === "PAYMENT") return;
         next[r.id] = target;
@@ -666,18 +800,11 @@ export default function FuelLedgerTable() {
                           const payment = num((row as any).payment);
                           const balance = received - payment;
 
-                          const purchaseTypeLabel = isPayment
-                            ? ""
-                            : String((row as any).purchaseType || "")
-                                .replace("OWN_VEHICLE", "Own")
-                                .replace("RENT_VEHICLE", "Rental");
+                          const purchaseTypeLabel = purchaseTypeLabelOf(row);
 
                           const vehicleLabel = isPayment
                             ? ""
-                            : [
-                                (row as any).vehicleName,
-                                (row as any).vehicleNumber,
-                              ]
+                            : [(row as any).vehicleName, (row as any).vehicleNumber]
                                 .filter(Boolean)
                                 .join(" ");
 
@@ -697,9 +824,7 @@ export default function FuelLedgerTable() {
                               </td>
 
                               <td className="p-3">{fmtDate(row.entryDate)}</td>
-                              <td className="p-3">
-                                {(row as any).siteName || selectedSite?.siteName || ""}
-                              </td>
+                              <td className="p-3">{(row as any).siteName || selectedSite?.siteName || ""}</td>
                               <td className="p-3">{row.slipNo || ""}</td>
                               <td className="p-3">{row.through || ""}</td>
                               <td className="p-3">{purchaseTypeLabel}</td>
@@ -773,29 +898,21 @@ export default function FuelLedgerTable() {
         </CardContent>
       </Card>
 
-      {/* POPUP 1 - Purchase Form (Responsive + Centered like Bulk Edit) */}
+      {/* POPUP 1 - Purchase Form */}
       <Dialog open={openPurchaseForm} onOpenChange={setOpenPurchaseForm}>
         <DialogContent
           className="
             !flex !flex-col !p-0 overflow-hidden
             !h-[92vh] !max-h-[92vh]
-
-            /* ✅ never overflow viewport */
             !w-[calc(100vw-24px)] !max-w-[calc(100vw-24px)]
             sm:!w-[calc(100vw-40px)] sm:!max-w-[calc(100vw-40px)]
             md:!max-w-[1100px]
             lg:!max-w-[1400px]
             xl:!max-w-[1700px]
             2xl:!max-w-[1800px]
-
-            /* ✅ hard center (prevents left/right cut) */
             !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2
           "
         >
-          {/* ✅ Outer DialogHeader हटाया (double title/space waste avoid)
-              FuelPurchaseForm के अंदर already heading/UI होता है */}
-
-          {/* ✅ Only this area scrolls */}
           <div className="flex-1 min-h-0 overflow-auto p-4">
             <FuelPurchaseForm onCancel={() => setOpenPurchaseForm(false)} />
           </div>
@@ -809,10 +926,7 @@ export default function FuelLedgerTable() {
             <DialogTitle>Amount Received</DialogTitle>
           </DialogHeader>
 
-          <FuelAmountReceive
-            station={selectedFuelStation?.name || ""}
-            onClose={() => setOpenAmountForm(false)}
-          />
+          <FuelAmountReceive station={selectedFuelStation?.name || ""} onClose={() => setOpenAmountForm(false)} />
         </DialogContent>
       </Dialog>
 
@@ -835,41 +949,34 @@ export default function FuelLedgerTable() {
         </DialogContent>
       </Dialog>
 
-        {/* POPUP 4 - Bulk Edit (Centered + No Overflow) */}
-        <Dialog open={openBulkEdit} onOpenChange={setOpenBulkEdit}>
-          <DialogContent
-            className="
-              !flex !flex-col !p-0 overflow-hidden
-              !h-[92vh] !max-h-[92vh]
-
-              /* ✅ width never exceeds viewport, with safe padding */
-              !w-[calc(100vw-24px)] !max-w-[calc(100vw-24px)]
-              sm:!w-[calc(100vw-40px)] sm:!max-w-[calc(100vw-40px)]
-              md:!max-w-[1100px]
-              lg:!max-w-[1400px]
-              xl:!max-w-[1700px]
-              2xl:!max-w-[1800px]
-
-              /* ✅ force perfect center (prevents left cut) */
-              !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2
-            "
-          >
-            <EditFuelLedgerTable
-              rows={selectedRows}
-              sites={sites}
-              fuelStations={fuelStations}
-              baseUrl={BASE_URL}
-              onCancel={() => setOpenBulkEdit(false)}
-              onSaved={async () => {
-                await loadLedgerRows();
-                setOpenBulkEdit(false);
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-
-
-
+      {/* POPUP 4 - Bulk Edit */}
+      <Dialog open={openBulkEdit} onOpenChange={setOpenBulkEdit}>
+        <DialogContent
+          className="
+            !flex !flex-col !p-0 overflow-hidden
+            !h-[92vh] !max-h-[92vh]
+            !w-[calc(100vw-24px)] !max-w-[calc(100vw-24px)]
+            sm:!w-[calc(100vw-40px)] sm:!max-w-[calc(100vw-40px)]
+            md:!max-w-[1100px]
+            lg:!max-w-[1400px]
+            xl:!max-w-[1700px]
+            2xl:!max-w-[1800px]
+            !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2
+          "
+        >
+          <EditFuelLedgerTable
+            rows={selectedRows}
+            sites={sites}
+            fuelStations={fuelStations}
+            baseUrl={BASE_URL}
+            onCancel={() => setOpenBulkEdit(false)}
+            onSaved={async () => {
+              await loadLedgerRows();
+              setOpenBulkEdit(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* POPUP 5 - Delete Confirm (Hard Delete) */}
       <DeleteConfirmDialog

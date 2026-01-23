@@ -1,3 +1,5 @@
+// D:\Projects\branao.in\clone\branao-Full-Kit\app\[lang]\(dashboard)\(ledger)\fuels-ledger\components\EditFuelLedgerTable.tsx
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +17,24 @@ import type {
 } from "./fuel-ledger.types";
 
 /* ================= TYPES (LOCAL ONLY) ================= */
+type OwnerLedgerLite = {
+  id: string;
+  name: string;
+  ledgerType?: { id?: string; name?: string | null } | null;
+  isDeleted?: boolean;
+};
+
+type VehicleRentVehicleLite = {
+  id: string;
+  ownerLedgerId: string;
+  vehicleNo: string;
+  vehicleName: string;
+  rentBasis?: string | null;
+  hourlyRate?: any;
+  monthlyRate?: any;
+  agreementUrl?: string | null;
+};
+
 type EditableRow = {
   id: string;
 
@@ -26,9 +46,13 @@ type EditableRow = {
   slipNo: string;
   through: string;
 
+  // ✅ stored in DB as OWN_VEHICLE / RENT_VEHICLE
   purchaseType: PurchaseType;
 
-  vehicleNumber: string;
+  // ✅ NEW: for RENT_VEHICLE (VEHICLE_OWNER ledger id)
+  ownerLedgerId: string;
+
+  vehicleNumber: string; // vehicleNo
   vehicleName: string;
 
   fuelType: FuelType;
@@ -41,6 +65,8 @@ type EditableRow = {
 
 /* ================= CONSTS ================= */
 const LEDGER_API_PATH = "/api/fuel-station-ledger";
+const LEDGERS_API_PATH = "/api/ledgers";
+const VEHICLE_RENT_VEHICLES_API_PATH = "/api/vehicle-rent/vehicles";
 
 /* ================= HELPERS ================= */
 const cleanStr = (v: any) => String(v ?? "").trim();
@@ -77,6 +103,12 @@ const normalizeFuelType = (v: any): FuelType => {
   return allowed.includes(s as FuelType) ? (s as FuelType) : "Diesel";
 };
 
+function normalizeList(json: any) {
+  if (Array.isArray(json?.data)) return json.data;
+  if (Array.isArray(json)) return json;
+  return [];
+}
+
 const normalizeRow = (r: EditableRow) => ({
   fuelStationId: cleanStr(r.fuelStationId),
   siteId: cleanStr(r.siteId),
@@ -86,6 +118,8 @@ const normalizeRow = (r: EditableRow) => ({
   through: cleanStr(r.through),
 
   purchaseType: cleanStr(r.purchaseType),
+
+  ownerLedgerId: cleanStr(r.ownerLedgerId),
 
   vehicleNumber: cleanStr(r.vehicleNumber),
   vehicleName: cleanStr(r.vehicleName),
@@ -118,40 +152,142 @@ export default function EditFuelLedgerTable(props: {
   } = props;
 
   const LEDGER_API = useMemo(() => `${baseUrl}${LEDGER_API_PATH}`, [baseUrl]);
+  const LEDGERS_API = useMemo(() => `${baseUrl}${LEDGERS_API_PATH}`, [baseUrl]);
+  const VEHICLES_API = useMemo(
+    () => `${baseUrl}${VEHICLE_RENT_VEHICLES_API_PATH}`,
+    [baseUrl]
+  );
 
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formRows, setFormRows] = useState<EditableRow[]>([]);
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
 
+  // ✅ VEHICLE_OWNER ledgers (for PurchaseType column list)
+  const [ownerLedgers, setOwnerLedgers] = useState<OwnerLedgerLite[]>([]);
+  const [loadingOwners, setLoadingOwners] = useState(false);
+
+  // ✅ vehicles by ownerLedgerId (for Vehicle Number dropdown)
+  const [vehiclesByOwner, setVehiclesByOwner] = useState<Record<string, VehicleRentVehicleLite[]>>(
+    {}
+  );
+  const [loadingVehicles, setLoadingVehicles] = useState<Record<string, boolean>>({});
+
   const originalMapRef = useRef<Record<string, EditableRow>>({});
 
+  /* ================= LOAD VEHICLE OWNERS ================= */
+  const loadVehicleOwners = async () => {
+    try {
+      setLoadingOwners(true);
+      const res = await fetch(`${LEDGERS_API}?_ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const json = await res.json().catch(() => ({}));
+      const list: OwnerLedgerLite[] = normalizeList(json);
+
+      const filtered = list
+        .filter((l) => {
+          const t = String(l?.ledgerType?.name || "").trim().toUpperCase();
+          const del = (l as any)?.isDeleted;
+          return t === "VEHICLE_OWNER" && !del;
+        })
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+      setOwnerLedgers(filtered);
+    } catch (e) {
+      console.error("❌ VEHICLE_OWNER ledgers load failed:", e);
+      setOwnerLedgers([]);
+    } finally {
+      setLoadingOwners(false);
+    }
+  };
+
+  /* ================= LOAD VEHICLES FOR OWNER ================= */
+  const loadVehiclesForOwner = async (ownerLedgerId: string) => {
+    const oid = cleanStr(ownerLedgerId);
+    if (!oid) return;
+
+    // already cached
+    if (vehiclesByOwner[oid]?.length) return;
+
+    setLoadingVehicles((p) => ({ ...p, [oid]: true }));
+    try {
+      const qs = new URLSearchParams();
+      qs.set("ownerLedgerId", oid);
+
+      const res = await fetch(`${VEHICLES_API}?${qs.toString()}&_ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const json = await res.json().catch(() => ({}));
+      const list: VehicleRentVehicleLite[] = normalizeList(json);
+
+      const sorted = (list || [])
+        .map((v: any) => ({
+          id: String(v.id),
+          ownerLedgerId: String(v.ownerLedgerId),
+          vehicleNo: String(v.vehicleNo || ""),
+          vehicleName: String(v.vehicleName || ""),
+        }))
+        .filter((v) => v.vehicleNo)
+        .sort((a, b) => a.vehicleNo.localeCompare(b.vehicleNo));
+
+      setVehiclesByOwner((p) => ({ ...p, [oid]: sorted }));
+    } catch (e) {
+      console.error("❌ Vehicles load failed:", e);
+      setVehiclesByOwner((p) => ({ ...p, [oid]: [] }));
+    } finally {
+      setLoadingVehicles((p) => ({ ...p, [oid]: false }));
+    }
+  };
+
+  useEffect(() => {
+    // load owner ledgers once (baseUrl available)
+    loadVehicleOwners();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseUrl]);
+
+  /* ================= INIT MAP FROM SELECTED ROWS ================= */
   useEffect(() => {
     setErrors({});
 
-    const mapped: EditableRow[] = (rows ?? []).map((r) => ({
-      id: r.id,
+    const mapped: EditableRow[] = (rows ?? []).map((r: any) => {
+      const pt = normalizePurchaseType(r.purchaseType);
 
-      fuelStationId: cleanStr(r.fuelStationId ?? r.fuelStation?.id ?? ""),
-      siteId: cleanStr(r.siteId ?? r.site?.id ?? ""),
+      const ownerLedgerId = cleanStr(
+        // ✅ preferred: new DB field
+        r.ownerLedgerId ??
+          // optional fallback (if someone stored as ownerLedgerId inside purchaseType string earlier)
+          ""
+      );
 
-      entryDate: toInputDate(String(r.entryDate ?? "")),
+      return {
+        id: r.id,
 
-      slipNo: cleanStr(r.slipNo),
-      through: cleanStr(r.through),
+        fuelStationId: cleanStr(r.fuelStationId ?? r.ledgerId ?? r.fuelStation?.id ?? ""),
+        siteId: cleanStr(r.siteId ?? r.site?.id ?? ""),
 
-      purchaseType: normalizePurchaseType(r.purchaseType),
+        entryDate: toInputDate(String(r.entryDate ?? "")),
 
-      vehicleNumber: cleanStr(r.vehicleNumber),
-      vehicleName: cleanStr(r.vehicleName),
+        slipNo: cleanStr(r.slipNo),
+        through: cleanStr(r.through),
 
-      fuelType: normalizeFuelType(r.fuelType),
+        purchaseType: pt,
 
-      qty: r.qty == null ? "" : String(r.qty),
-      rate: r.rate == null ? "" : String(r.rate),
+        ownerLedgerId: pt === "RENT_VEHICLE" ? ownerLedgerId : "",
 
-      remarks: cleanStr(r.remarks),
-    }));
+        vehicleNumber: cleanStr(r.vehicleNumber),
+        vehicleName: cleanStr(r.vehicleName),
+
+        fuelType: normalizeFuelType(r.fuelType),
+
+        qty: r.qty == null ? "" : String(r.qty),
+        rate: r.rate == null ? "" : String(r.rate),
+
+        remarks: cleanStr(r.remarks),
+      };
+    });
 
     setFormRows(mapped);
     setDirtyIds(new Set());
@@ -159,6 +295,14 @@ export default function EditFuelLedgerTable(props: {
     const snap: Record<string, EditableRow> = {};
     mapped.forEach((m) => (snap[m.id] = m));
     originalMapRef.current = snap;
+
+    // preload vehicles for rows which are RENT + have ownerLedgerId
+    mapped.forEach((m) => {
+      if (m.purchaseType === "RENT_VEHICLE" && m.ownerLedgerId) {
+        loadVehiclesForOwner(m.ownerLedgerId);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
   const markDirtyIfChanged = (rowId: string, nextRow: EditableRow) => {
@@ -175,6 +319,7 @@ export default function EditFuelLedgerTable(props: {
       a.slipNo !== b.slipNo ||
       a.through !== b.through ||
       a.purchaseType !== b.purchaseType ||
+      a.ownerLedgerId !== b.ownerLedgerId ||
       a.vehicleNumber !== b.vehicleNumber ||
       a.vehicleName !== b.vehicleName ||
       a.fuelType !== b.fuelType ||
@@ -194,11 +339,50 @@ export default function EditFuelLedgerTable(props: {
     setFormRows((prev) =>
       prev.map((r) => {
         if (r.id !== id) return r;
-        const nextRow = { ...r, ...patch };
+
+        const nextRow: EditableRow = { ...r, ...patch };
+
+        // ✅ if purchaseType changed to OWN -> clear owner + vehicle fields
+        if (patch.purchaseType === "OWN_VEHICLE") {
+          nextRow.ownerLedgerId = "";
+          // keep existing manual entry? (no feature change) -> keep as is, but safe to clear:
+          // nextRow.vehicleNumber = "";
+          // nextRow.vehicleName = "";
+        }
+
+        // ✅ if switched to RENT without owner -> clear owner vehicle fields
+        if (patch.purchaseType === "RENT_VEHICLE" && !nextRow.ownerLedgerId) {
+          // keep as is
+        }
+
         markDirtyIfChanged(id, nextRow);
         return nextRow;
       })
     );
+  };
+
+  // ✅ PurchaseType column single-dropdown handler
+  const setPurchaseTypeSelection = (rowId: string, val: string) => {
+    // val = "OWN_VEHICLE" OR "RENT_OWNER:<ledgerId>"
+    if (val === "OWN_VEHICLE") {
+      updateRow(rowId, { purchaseType: "OWN_VEHICLE", ownerLedgerId: "" });
+      return;
+    }
+
+    if (val.startsWith("RENT_OWNER:")) {
+      const ownerLedgerId = val.replace("RENT_OWNER:", "").trim();
+
+      // when selecting a new owner, clear vehicle selection (so user picks correct vehicle)
+      updateRow(rowId, {
+        purchaseType: "RENT_VEHICLE",
+        ownerLedgerId,
+        vehicleNumber: "",
+        vehicleName: "",
+      });
+
+      loadVehiclesForOwner(ownerLedgerId);
+      return;
+    }
   };
 
   const removeRow = (id: string) => {
@@ -220,6 +404,13 @@ export default function EditFuelLedgerTable(props: {
     setFormRows((prev) => prev.map((r) => snap[r.id] || r));
     setErrors({});
     setDirtyIds(new Set());
+
+    // preload vehicles again for restored rows
+    Object.values(snap).forEach((m) => {
+      if (m.purchaseType === "RENT_VEHICLE" && m.ownerLedgerId) {
+        loadVehiclesForOwner(m.ownerLedgerId);
+      }
+    });
   };
 
   const validateOnly = (rowsToValidate: EditableRow[]) => {
@@ -231,6 +422,8 @@ export default function EditFuelLedgerTable(props: {
       else if (!cleanStr(r.entryDate)) nextErr[r.id] = "Date required";
       else if (!cleanStr(r.slipNo)) nextErr[r.id] = "Slip/Receipt No required";
       else if (!cleanStr(r.through)) nextErr[r.id] = "Through required";
+      else if (r.purchaseType === "RENT_VEHICLE" && !cleanStr(r.ownerLedgerId))
+        nextErr[r.id] = "Vehicle Owner required";
       else if (!cleanStr(r.vehicleNumber)) nextErr[r.id] = "Vehicle Number required";
       else if (!cleanStr(r.vehicleName)) nextErr[r.id] = "Vehicle required";
       else if (!cleanStr(r.fuelType)) nextErr[r.id] = "Fuel Type required";
@@ -274,15 +467,21 @@ export default function EditFuelLedgerTable(props: {
           const rt = num(r.rate);
           const amount = Number.isFinite(q) && Number.isFinite(rt) ? q * rt : null;
 
-          const payload = {
+          const payload: any = {
+            // ✅ accept both names (service/model uses ledgerId; UI uses fuelStationId)
             fuelStationId: cleanStr(r.fuelStationId),
+            ledgerId: cleanStr(r.fuelStationId),
+
             siteId: cleanStr(r.siteId),
             entryDate: iso,
 
             slipNo: cleanStr(r.slipNo),
             through: cleanStr(r.through),
 
-            purchaseType: r.purchaseType,
+            purchaseType: r.purchaseType, // OWN_VEHICLE / RENT_VEHICLE
+
+            // ✅ NEW
+            ownerLedgerId: r.purchaseType === "RENT_VEHICLE" ? cleanStr(r.ownerLedgerId) : null,
 
             vehicleNumber: cleanStr(r.vehicleNumber),
             vehicleName: cleanStr(r.vehicleName),
@@ -319,6 +518,13 @@ export default function EditFuelLedgerTable(props: {
 
   const errorCount = Object.keys(errors).length;
   const editedCount = dirtyIds.size;
+
+  // helper for purchase type select value
+  const purchaseSelectValue = (r: EditableRow) => {
+    if (r.purchaseType === "OWN_VEHICLE") return "OWN_VEHICLE";
+    if (r.purchaseType === "RENT_VEHICLE" && r.ownerLedgerId) return `RENT_OWNER:${r.ownerLedgerId}`;
+    return "RENT_OWNER:"; // placeholder
+  };
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -371,6 +577,10 @@ export default function EditFuelLedgerTable(props: {
               >
                 {saving ? "Updating..." : `Update (${editedCount})`}
               </Button>
+
+              <span className="text-[11px] text-muted-foreground ml-2">
+                Owners: {loadingOwners ? "Loading..." : ownerLedgers.length}
+              </span>
             </div>
           </div>
         </div>
@@ -390,7 +600,7 @@ export default function EditFuelLedgerTable(props: {
             {/* DESKTOP TABLE */}
             <div className="hidden md:block">
               <div style={{ overflowX: "auto" }}>
-                <div style={{ minWidth: 2200 }}>
+                <div style={{ minWidth: 2400 }}>
                   <table className="w-full text-sm border-collapse">
                     <thead className="sticky top-0 z-20 bg-muted/80 backdrop-blur border-b">
                       <tr className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -400,9 +610,13 @@ export default function EditFuelLedgerTable(props: {
                         <th className="px-3 py-3 text-left w-44">Date</th>
                         <th className="px-3 py-3 text-left w-44">Slip/Receipt No</th>
                         <th className="px-3 py-3 text-left w-56">Through</th>
-                        <th className="px-3 py-3 text-left w-44">Purchase Type</th>
-                        <th className="px-3 py-3 text-left w-48">Vehicle Number</th>
-                        <th className="px-3 py-3 text-left w-48">Vehicle</th>
+
+                        {/* ✅ Purchase type now contains Vehicle Owner list when Rent */}
+                        <th className="px-3 py-3 text-left w-72">Purchase Type / Owner</th>
+
+                        <th className="px-3 py-3 text-left w-52">Vehicle Number</th>
+                        <th className="px-3 py-3 text-left w-52">Vehicle</th>
+
                         <th className="px-3 py-3 text-left w-36">Fuel Type</th>
                         <th className="px-3 py-3 text-right w-28">Qty</th>
                         <th className="px-3 py-3 text-right w-28">Rate</th>
@@ -418,6 +632,10 @@ export default function EditFuelLedgerTable(props: {
                         const q = num(r.qty);
                         const rt = num(r.rate);
                         const amt = Number.isFinite(q) && Number.isFinite(rt) ? q * rt : null;
+
+                        const isRent = r.purchaseType === "RENT_VEHICLE";
+                        const ownerVehicles = r.ownerLedgerId ? vehiclesByOwner[r.ownerLedgerId] || [] : [];
+                        const isLoadingVeh = r.ownerLedgerId ? !!loadingVehicles[r.ownerLedgerId] : false;
 
                         return (
                           <tr
@@ -498,35 +716,81 @@ export default function EditFuelLedgerTable(props: {
                               />
                             </td>
 
+                            {/* ✅ PurchaseType single select with owner list inside */}
                             <td className="px-3 py-3">
                               <select
-                                className="border bg-background px-2 py-2 rounded-md text-sm w-44"
-                                value={r.purchaseType}
-                                onChange={(e) =>
-                                  updateRow(r.id, { purchaseType: e.target.value as PurchaseType })
-                                }
-                                disabled={saving}
+                                className="border bg-background px-2 py-2 rounded-md text-sm w-72"
+                                value={purchaseSelectValue(r)}
+                                onChange={(e) => setPurchaseTypeSelection(r.id, e.target.value)}
+                                disabled={saving || loadingOwners}
+                                title="Select Own Vehicle OR Rent - Owner"
                               >
                                 <option value="OWN_VEHICLE">Own Vehicle</option>
-                                <option value="RENT_VEHICLE">Rent Vehicle</option>
+
+                                <option value="RENT_OWNER:" disabled>
+                                  {loadingOwners ? "Loading owners..." : "Rent Vehicle - Select Owner"}
+                                </option>
+
+                                {(ownerLedgers ?? []).map((o) => (
+                                  <option key={o.id} value={`RENT_OWNER:${o.id}`}>
+                                    Rent - {o.name}
+                                  </option>
+                                ))}
                               </select>
+
+                              {isRent && !r.ownerLedgerId ? (
+                                <div className="text-[11px] text-muted-foreground mt-1">
+                                  Owner select करें
+                                </div>
+                              ) : null}
                             </td>
 
+                            {/* ✅ Vehicle Number: for RENT -> dropdown from VehicleRentVehicle by ownerLedgerId */}
                             <td className="px-3 py-3">
-                              <Input
-                                value={r.vehicleNumber}
-                                onChange={(e) => updateRow(r.id, { vehicleNumber: e.target.value })}
-                                disabled={saving}
-                                className="w-48"
-                              />
+                              {isRent ? (
+                                <select
+                                  className="border bg-background px-2 py-2 rounded-md text-sm w-52"
+                                  value={r.vehicleNumber}
+                                  onChange={(e) => {
+                                    const vno = e.target.value;
+                                    const found = ownerVehicles.find((v) => v.vehicleNo === vno);
+                                    updateRow(r.id, {
+                                      vehicleNumber: vno,
+                                      vehicleName: found?.vehicleName || "",
+                                    });
+                                  }}
+                                  disabled={saving || !r.ownerLedgerId || isLoadingVeh}
+                                >
+                                  <option value="">
+                                    {!r.ownerLedgerId
+                                      ? "Select owner first"
+                                      : isLoadingVeh
+                                      ? "Loading vehicles..."
+                                      : "Select Vehicle No"}
+                                  </option>
+                                  {ownerVehicles.map((v) => (
+                                    <option key={v.id} value={v.vehicleNo}>
+                                      {v.vehicleNo} {v.vehicleName ? `- ${v.vehicleName}` : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <Input
+                                  value={r.vehicleNumber}
+                                  onChange={(e) => updateRow(r.id, { vehicleNumber: e.target.value })}
+                                  disabled={saving}
+                                  className="w-52"
+                                />
+                              )}
                             </td>
 
+                            {/* Vehicle Name: auto-filled for RENT (still editable if you want) */}
                             <td className="px-3 py-3">
                               <Input
                                 value={r.vehicleName}
                                 onChange={(e) => updateRow(r.id, { vehicleName: e.target.value })}
                                 disabled={saving}
-                                className="w-48"
+                                className="w-52"
                               />
                             </td>
 
@@ -615,6 +879,9 @@ export default function EditFuelLedgerTable(props: {
             <div className="md:hidden p-3 space-y-3">
               {formRows.map((r, idx) => {
                 const isDirty = dirtyIds.has(r.id);
+                const isRent = r.purchaseType === "RENT_VEHICLE";
+                const ownerVehicles = r.ownerLedgerId ? vehiclesByOwner[r.ownerLedgerId] || [] : [];
+                const isLoadingVeh = r.ownerLedgerId ? !!loadingVehicles[r.ownerLedgerId] : false;
 
                 return (
                   <div
@@ -707,22 +974,79 @@ export default function EditFuelLedgerTable(props: {
                         />
                       </div>
 
+                      <div>
+                        <div className="text-[11px] text-muted-foreground mb-1">
+                          Purchase Type / Owner
+                        </div>
+                        <select
+                          className="border bg-background px-2 py-2 rounded-md text-sm w-full"
+                          value={purchaseSelectValue(r)}
+                          onChange={(e) => setPurchaseTypeSelection(r.id, e.target.value)}
+                          disabled={saving || loadingOwners}
+                        >
+                          <option value="OWN_VEHICLE">Own Vehicle</option>
+                          <option value="RENT_OWNER:" disabled>
+                            {loadingOwners ? "Loading owners..." : "Rent Vehicle - Select Owner"}
+                          </option>
+                          {(ownerLedgers ?? []).map((o) => (
+                            <option key={o.id} value={`RENT_OWNER:${o.id}`}>
+                              Rent - {o.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <div className="text-[11px] text-muted-foreground mb-1">Purchase</div>
-                          <select
-                            className="border bg-background px-2 py-2 rounded-md text-sm w-full"
-                            value={r.purchaseType}
-                            onChange={(e) =>
-                              updateRow(r.id, { purchaseType: e.target.value as PurchaseType })
-                            }
-                            disabled={saving}
-                          >
-                            <option value="OWN_VEHICLE">Own</option>
-                            <option value="RENT_VEHICLE">Rent</option>
-                          </select>
+                          <div className="text-[11px] text-muted-foreground mb-1">Vehicle Number</div>
+
+                          {isRent ? (
+                            <select
+                              className="border bg-background px-2 py-2 rounded-md text-sm w-full"
+                              value={r.vehicleNumber}
+                              onChange={(e) => {
+                                const vno = e.target.value;
+                                const found = ownerVehicles.find((v) => v.vehicleNo === vno);
+                                updateRow(r.id, {
+                                  vehicleNumber: vno,
+                                  vehicleName: found?.vehicleName || "",
+                                });
+                              }}
+                              disabled={saving || !r.ownerLedgerId || isLoadingVeh}
+                            >
+                              <option value="">
+                                {!r.ownerLedgerId
+                                  ? "Select owner first"
+                                  : isLoadingVeh
+                                  ? "Loading vehicles..."
+                                  : "Select Vehicle No"}
+                              </option>
+                              {ownerVehicles.map((v) => (
+                                <option key={v.id} value={v.vehicleNo}>
+                                  {v.vehicleNo} {v.vehicleName ? `- ${v.vehicleName}` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              value={r.vehicleNumber}
+                              onChange={(e) => updateRow(r.id, { vehicleNumber: e.target.value })}
+                              disabled={saving}
+                            />
+                          )}
                         </div>
 
+                        <div>
+                          <div className="text-[11px] text-muted-foreground mb-1">Vehicle</div>
+                          <Input
+                            value={r.vehicleName}
+                            onChange={(e) => updateRow(r.id, { vehicleName: e.target.value })}
+                            disabled={saving}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
                         <div>
                           <div className="text-[11px] text-muted-foreground mb-1">Fuel Type</div>
                           <select
@@ -741,22 +1065,11 @@ export default function EditFuelLedgerTable(props: {
                             <option value="Other">Other</option>
                           </select>
                         </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <div className="text-[11px] text-muted-foreground mb-1">Vehicle Number</div>
+                          <div className="text-[11px] text-muted-foreground mb-1">Remark</div>
                           <Input
-                            value={r.vehicleNumber}
-                            onChange={(e) => updateRow(r.id, { vehicleNumber: e.target.value })}
-                            disabled={saving}
-                          />
-                        </div>
-                        <div>
-                          <div className="text-[11px] text-muted-foreground mb-1">Vehicle</div>
-                          <Input
-                            value={r.vehicleName}
-                            onChange={(e) => updateRow(r.id, { vehicleName: e.target.value })}
+                            value={r.remarks}
+                            onChange={(e) => updateRow(r.id, { remarks: e.target.value })}
                             disabled={saving}
                           />
                         </div>
@@ -781,15 +1094,6 @@ export default function EditFuelLedgerTable(props: {
                             inputMode="decimal"
                           />
                         </div>
-                      </div>
-
-                      <div>
-                        <div className="text-[11px] text-muted-foreground mb-1">Remark</div>
-                        <Input
-                          value={r.remarks}
-                          onChange={(e) => updateRow(r.id, { remarks: e.target.value })}
-                          disabled={saving}
-                        />
                       </div>
 
                       <div>

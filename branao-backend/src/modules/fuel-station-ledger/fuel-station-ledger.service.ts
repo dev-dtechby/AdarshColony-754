@@ -11,6 +11,9 @@ type BulkRow = {
   through?: string | null;
   purchaseType: PurchaseType;
 
+  // ✅ only when RENT_VEHICLE
+  ownerLedgerId?: string | null;
+
   vehicleNumber: string;
   vehicleName?: string | null;
 
@@ -26,6 +29,16 @@ const n = (v: any) => {
   return Number.isFinite(x) ? x : 0;
 };
 
+const clean = (v: any) => String(v ?? "").trim();
+
+/** Decimal.js safety: always JSON-safe */
+const toJsonSafe = (row: any) => ({
+  ...row,
+  qty: row?.qty != null ? String(row.qty) : row?.qty,
+  rate: row?.rate != null ? String(row.rate) : row?.rate,
+  amount: row?.amount != null ? String(row.amount) : row?.amount,
+});
+
 function buildExpenseTitle(fuelType: string) {
   const ft = String(fuelType || "").trim();
   return ft ? `Fuel Purchase - ${ft}` : "Fuel Purchase";
@@ -35,6 +48,10 @@ function buildExpenseSummary(p: {
   fuelStationName: string;
   fuelType: string;
   purchaseType: string;
+
+  // ✅ show owner name in summary for rent
+  ownerName?: string | null;
+
   vehicleNumber: string;
   vehicleName?: string | null;
   through?: string | null;
@@ -44,7 +61,13 @@ function buildExpenseSummary(p: {
   const parts: string[] = [];
   parts.push(`Fuel Station: ${p.fuelStationName}`);
   if (p.fuelType) parts.push(`Fuel: ${p.fuelType}`);
-  parts.push(`PurchaseType: ${p.purchaseType}`);
+
+  if (p.purchaseType === "RENT_VEHICLE") {
+    parts.push(`PurchaseType: RENT_VEHICLE`);
+    if (p.ownerName) parts.push(`Owner: ${p.ownerName}`);
+  } else {
+    parts.push(`PurchaseType: OWN_VEHICLE`);
+  }
 
   parts.push(`VehicleNo: ${p.vehicleNumber}`);
   if (p.vehicleName) parts.push(`Vehicle: ${p.vehicleName}`);
@@ -58,35 +81,46 @@ function buildExpenseSummary(p: {
 
 /**
  * ✅ GET Ledger rows
- * - ledgerId = Fuel Station ledger (Ledger table)
- * - siteId optional
+ * FIX: return ownerLedgerId + ownerLedgerName explicitly at top-level
  */
 export async function getLedger(filters: { ledgerId?: string; siteId?: string }) {
-  return prisma.fuelStationLedger.findMany({
+  const rows = await prisma.fuelStationLedger.findMany({
     where: {
-      ledgerId: filters.ledgerId,
-      siteId: filters.siteId,
+      ...(filters.ledgerId ? { ledgerId: filters.ledgerId } : {}),
+      ...(filters.siteId ? { siteId: filters.siteId } : {}),
     },
     include: {
       site: { select: { id: true, siteName: true } },
       ledger: { select: { id: true, name: true } },
+
+      // ✅ NEW (relation must exist in schema)
+      ownerLedger: { select: { id: true, name: true } },
     },
     orderBy: { entryDate: "asc" },
+  });
+
+  // ✅ Ensure UI always gets these fields
+  return rows.map((r: any) => {
+    const ownerId = r?.ownerLedgerId ?? r?.ownerLedger?.id ?? null;
+    const ownerName = r?.ownerLedger?.name ?? null;
+
+    return {
+      ...toJsonSafe(r),
+      ownerLedgerId: ownerId ? String(ownerId) : null,
+      ownerLedgerName: ownerName ? String(ownerName) : null,
+    };
   });
 }
 
 /**
  * ✅ CREATE BULK
- * - Creates SiteExpense for each row
- * - Creates FuelStationLedger row linked to SiteExpense
  */
 export async function createBulk(input: {
-  ledgerId: string; // ✅ Fuel Station = Ledger table ID
+  ledgerId: string;
   siteId: string;
   entryDate?: string; // fallback date
   rows: BulkRow[];
 }) {
-  // ✅ Fuel Station details fetched from Ledger table
   const fuelStationLedger = await prisma.ledger.findUnique({
     where: { id: input.ledgerId },
     select: { id: true, name: true },
@@ -106,23 +140,40 @@ export async function createBulk(input: {
       const rate = n(r.rate);
       const amount = qty * rate;
 
-      const fuelType = String(r.fuelType || "").trim();
-      const vehicleNumber = String(r.vehicleNumber || "").trim();
+      const fuelType = clean(r.fuelType);
+      const vehicleNumber = clean(r.vehicleNumber);
 
       if (!fuelType) throw new Error("fuelType required");
       if (!vehicleNumber) throw new Error("vehicleNumber required");
       if (!(qty > 0)) throw new Error("qty must be > 0");
       if (!(rate > 0)) throw new Error("rate must be > 0");
 
-      const purchaseType = r.purchaseType as any;
+      const purchaseType = r.purchaseType as PurchaseType;
       if (!purchaseType) throw new Error("purchaseType required");
+
+      // ✅ validate owner for rent + fetch owner name
+      let ownerLedgerId: string | null = null;
+      let ownerName: string | null = null;
+
+      if (purchaseType === "RENT_VEHICLE") {
+        ownerLedgerId = clean(r.ownerLedgerId) || null;
+        if (!ownerLedgerId) throw new Error("ownerLedgerId required for RENT_VEHICLE");
+
+        const owner = await pr.ledger.findUnique({
+          where: { id: ownerLedgerId },
+          select: { id: true, name: true },
+        });
+        if (!owner) throw new Error("owner ledger not found");
+        ownerName = owner.name;
+      }
 
       // 1) create SiteExpense
       const expenseTitle = buildExpenseTitle(fuelType);
       const expenseSummary = buildExpenseSummary({
         fuelStationName: fuelStationLedger.name,
         fuelType,
-        purchaseType: String(purchaseType),
+        purchaseType,
+        ownerName,
         vehicleNumber,
         vehicleName: r.vehicleName ?? null,
         through: r.through ?? null,
@@ -136,7 +187,7 @@ export async function createBulk(input: {
           expenseDate: entryDate,
           expenseTitle,
           summary: expenseSummary,
-          paymentDetails: r.through ? String(r.through).trim() : null,
+          paymentDetails: r.through ? clean(r.through) : null,
           amount: amount as any,
         },
         select: { id: true },
@@ -151,27 +202,40 @@ export async function createBulk(input: {
 
           entryDate,
 
-          slipNo: r.slipNo ? String(r.slipNo).trim() : null,
-          through: r.through ? String(r.through).trim() : null,
+          slipNo: r.slipNo ? clean(r.slipNo) : null,
+          through: r.through ? clean(r.through) : null,
           purchaseType: purchaseType,
 
+          // ✅ owner reference (must exist in schema)
+          ownerLedgerId: ownerLedgerId,
+
           vehicleNumber,
-          vehicleName: r.vehicleName ? String(r.vehicleName).trim() : null,
+          vehicleName: r.vehicleName ? clean(r.vehicleName) : null,
 
           fuelType,
           qty: qty as any,
           rate: rate as any,
           amount: amount as any,
 
-          remarks: r.remarks ? String(r.remarks).trim() : null,
+          remarks: r.remarks ? clean(r.remarks) : null,
         },
         include: {
           site: { select: { id: true, siteName: true } },
           ledger: { select: { id: true, name: true } },
+
+          // ✅ NEW
+          ownerLedger: { select: { id: true, name: true } },
         },
       });
 
-      created.push(ledgerRow);
+      const ownerId = ledgerRow?.ownerLedgerId ?? ledgerRow?.ownerLedger?.id ?? null;
+      const ownerNm = ledgerRow?.ownerLedger?.name ?? null;
+
+      created.push({
+        ...toJsonSafe(ledgerRow),
+        ownerLedgerId: ownerId ? String(ownerId) : null,
+        ownerLedgerName: ownerNm ? String(ownerNm) : null,
+      });
     }
 
     return created;
@@ -182,7 +246,6 @@ export async function createBulk(input: {
 
 /**
  * ✅ UPDATE ONE
- * - updates FuelStationLedger + linked SiteExpense
  */
 export async function updateOne(id: string, patch: any) {
   const existing = await prisma.fuelStationLedger.findUnique({
@@ -190,6 +253,9 @@ export async function updateOne(id: string, patch: any) {
     include: {
       ledger: { select: { id: true, name: true } },
       siteExpense: { select: { id: true } },
+
+      // ✅ NEW
+      ownerLedger: { select: { id: true, name: true } },
     },
   });
 
@@ -199,35 +265,52 @@ export async function updateOne(id: string, patch: any) {
   const nextRate = patch.rate != null ? n(patch.rate) : n(existing.rate);
   const nextAmount = patch.amount != null ? n(patch.amount) : nextQty * nextRate;
 
-  const nextFuelType =
-    patch.fuelType != null ? String(patch.fuelType).trim() : String(existing.fuelType);
-
-  const nextPurchaseType =
-    patch.purchaseType != null ? patch.purchaseType : existing.purchaseType;
+  const nextFuelType = patch.fuelType != null ? clean(patch.fuelType) : clean(existing.fuelType);
+  const nextPurchaseType = patch.purchaseType != null ? patch.purchaseType : existing.purchaseType;
 
   const nextVehicleNumber =
-    patch.vehicleNumber != null ? String(patch.vehicleNumber).trim() : String(existing.vehicleNumber);
+    patch.vehicleNumber != null ? clean(patch.vehicleNumber) : clean(existing.vehicleNumber);
 
   const nextVehicleName =
-    patch.vehicleName != null ? String(patch.vehicleName).trim() : existing.vehicleName;
+    patch.vehicleName != null ? (clean(patch.vehicleName) || null) : (existing.vehicleName ?? null);
 
-  const nextThrough =
-    patch.through != null ? String(patch.through).trim() : existing.through;
+  const nextThrough = patch.through != null ? (clean(patch.through) || null) : (existing.through ?? null);
+  const nextSlipNo = patch.slipNo != null ? (clean(patch.slipNo) || null) : (existing.slipNo ?? null);
+  const nextRemarks = patch.remarks != null ? (clean(patch.remarks) || null) : (existing.remarks ?? null);
 
-  const nextSlipNo =
-    patch.slipNo != null ? String(patch.slipNo).trim() : existing.slipNo;
+  const nextEntryDate = patch.entryDate != null ? new Date(patch.entryDate) : existing.entryDate;
 
-  const nextRemarks =
-    patch.remarks != null ? String(patch.remarks).trim() : existing.remarks;
+  // ✅ owner update
+  let nextOwnerLedgerId =
+    patch.ownerLedgerId !== undefined
+      ? (clean(patch.ownerLedgerId) || null)
+      : (existing.ownerLedgerId ?? null);
 
-  const nextEntryDate =
-    patch.entryDate != null ? new Date(patch.entryDate) : existing.entryDate;
+  // If switching to OWN_VEHICLE => owner must be null
+  if (String(nextPurchaseType) === "OWN_VEHICLE") nextOwnerLedgerId = null;
+
+  let ownerName: string | null = existing.ownerLedger?.name || null;
+
+  if (String(nextPurchaseType) === "RENT_VEHICLE") {
+    if (!nextOwnerLedgerId) throw new Error("ownerLedgerId required for RENT_VEHICLE");
+
+    const owner = await prisma.ledger.findUnique({
+      where: { id: nextOwnerLedgerId },
+      select: { id: true, name: true },
+    });
+
+    if (!owner) throw new Error("owner ledger not found");
+    ownerName = owner.name;
+  } else {
+    ownerName = null;
+  }
 
   const expenseTitle = buildExpenseTitle(nextFuelType);
   const expenseSummary = buildExpenseSummary({
     fuelStationName: existing.ledger?.name || "Fuel Station",
     fuelType: nextFuelType,
     purchaseType: String(nextPurchaseType),
+    ownerName,
     vehicleNumber: nextVehicleNumber,
     vehicleName: nextVehicleName,
     through: nextThrough,
@@ -235,7 +318,7 @@ export async function updateOne(id: string, patch: any) {
     remarks: nextRemarks,
   });
 
-  return prisma.$transaction(async (pr) => {
+  const updated = await prisma.$transaction(async (pr) => {
     // 1) update linked SiteExpense
     if (existing.siteExpenseId) {
       await pr.siteExpense.update({
@@ -251,7 +334,7 @@ export async function updateOne(id: string, patch: any) {
     }
 
     // 2) update FuelStationLedger
-    const updated = await pr.fuelStationLedger.update({
+    return pr.fuelStationLedger.update({
       where: { id },
       data: {
         entryDate: nextEntryDate,
@@ -259,6 +342,9 @@ export async function updateOne(id: string, patch: any) {
         slipNo: nextSlipNo || null,
         through: nextThrough || null,
         purchaseType: nextPurchaseType as any,
+
+        // ✅ NEW
+        ownerLedgerId: nextOwnerLedgerId,
 
         vehicleNumber: nextVehicleNumber,
         vehicleName: nextVehicleName || null,
@@ -273,16 +359,26 @@ export async function updateOne(id: string, patch: any) {
       include: {
         site: { select: { id: true, siteName: true } },
         ledger: { select: { id: true, name: true } },
+
+        // ✅ NEW
+        ownerLedger: { select: { id: true, name: true } },
       },
     });
-
-    return updated;
   });
+
+  const ownerId = (updated as any)?.ownerLedgerId ?? (updated as any)?.ownerLedger?.id ?? null;
+  const ownerNm = (updated as any)?.ownerLedger?.name ?? null;
+
+  return {
+    ...toJsonSafe(updated),
+    ownerLedgerId: ownerId ? String(ownerId) : null,
+    ownerLedgerName: ownerNm ? String(ownerNm) : null,
+  };
 }
 
 /**
  * ✅ HARD DELETE
- * - deletes linked SiteExpense also
+ * - delete FuelStationLedger row AND linked SiteExpense
  */
 export async function deleteOne(id: string) {
   const row = await prisma.fuelStationLedger.findUnique({
@@ -293,10 +389,10 @@ export async function deleteOne(id: string) {
   if (!row) return;
 
   await prisma.$transaction(async (pr) => {
+    await pr.fuelStationLedger.delete({ where: { id: row.id } });
+
     if (row.siteExpenseId) {
       await pr.siteExpense.delete({ where: { id: row.siteExpenseId } });
-      return;
     }
-    await pr.fuelStationLedger.delete({ where: { id: row.id } });
   });
 }

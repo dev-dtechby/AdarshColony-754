@@ -7,7 +7,7 @@ async function main() {
     "STAFF",
     "FUEL_STATION",
     "TRANSPORTER",
-    "VENDOR",
+    "VEHICLE_OWNER",
     "CLIENT",
     "OTHER",
   ];
