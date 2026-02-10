@@ -1,4 +1,3 @@
-// D:\Projects\AdarshColony754\AdrashApp\adarsh-backend\src\app.ts
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
@@ -11,13 +10,11 @@ import registrationRoutes from "./modules/registration/registration.routes";
 const app = express();
 
 // ====================
-// ✅ CORS (AdarshApp LOCAL + PROD)
+// ✅ CORS (AdarshApp ONLY)
 // ====================
-// Keep this list strictly for AdarshApp frontend(s) only.
-// Branao origins intentionally NOT included.
 const allowedOrigins = [
   "http://localhost:3000",
-  // Add your AdarshApp production frontend domains here when deployed:
+  // 👉 Production frontend domains (enable when deployed)
   // "https://adarshapp.in",
   // "https://www.adarshapp.in",
   // "https://adarshapp.vercel.app",
@@ -26,12 +23,14 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow server-to-server / Postman / curl
+      // Allow server-to-server, Postman, curl
       if (!origin) return callback(null, true);
 
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
 
-      return callback(new Error("CORS not allowed: " + origin), false);
+      return callback(new Error(`CORS not allowed: ${origin}`), false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -40,7 +39,7 @@ app.use(
 );
 
 // ====================
-// ✅ Disable caching (avoid stale data in dev/prod)
+// ✅ Disable caching (important for list pages)
 // ====================
 app.disable("etag");
 app.use((_req, res, next) => {
@@ -71,7 +70,6 @@ app.get("/", (_req, res) => {
 // ====================
 // API ROUTES (AdarshApp)
 // ====================
-// Registration module
 app.use("/api/registration", registrationRoutes);
 
 // ====================
