@@ -49,7 +49,7 @@ export default function BranaoDashboardPageView({ trans }: Props) {
       {/* Header (same pattern) */}
       <div className="flex items-center flex-wrap justify-between gap-4">
         <div className="text-2xl font-medium text-default-800">
-          Branao {trans?.dashboard}
+          Adarsh Colony 754 {trans?.dashboard}
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">

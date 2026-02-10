@@ -1,28 +1,23 @@
 import {
   LayoutDashboard,
-  Building2,
-  PlusCircle,
-  List,
-  Receipt,
-  TrendingUp,
-  BookOpen,
-  UserCog,
-  Factory,
-  Fuel,
-  HardHat,
+  ClipboardSignature,
   Users,
-  ShoppingCart,
-  Package,
-  Droplet,
-  CreditCard,
+  Building2,
+  Home,
+  BadgeCheck,
+  FileText,
+  Receipt,
+  Wallet,
+  CalendarDays,
+  Bell,
+  Search,
+  BarChart3,
   Settings,
   ShieldCheck,
-  Trash2,
+  UserCog,
   Lock,
+  Trash2,
   Sliders,
-  Truck,
-  ClipboardList,
-  FileText,
 } from "lucide-react";
 
 export interface MenuItemProps {
@@ -37,28 +32,166 @@ export interface MenuItemProps {
   onClick?: () => void;
 }
 
-const vehicleRentMenu = {
-  title: "Vehicle Rent",
-  icon: Truck,
+/**
+ * AdarshApp navigation philosophy:
+ * - Society core modules first (Registration, Residents, Blocks/Flats)
+ * - Then Maintenance + Receipts
+ * - Then Governance (Letters/Notices, Meetings)
+ * - Then Reports + Admin
+ */
+
+const societyMasterMenu: MenuItemProps = {
+  title: "Society Master",
+  icon: Building2,
   child: [
-    // ✅ order: Vehicle Entry -> Logbook Entry -> Vehicle Ledger
     {
-      title: "Vehicle Entry",
-      icon: PlusCircle,
-      href: "/vehicle-rent-entry",
-      description: "Add / manage rented vehicle master",
+      title: "Blocks",
+      icon: Building2,
+      href: "/blocks",
+      description: "Create/manage 26 blocks",
     },
     {
-      title: "Logbook Entry",
-      icon: ClipboardList,
-      href: "/vehicle-logbook-entry",
-      description: "Daily log entries (meter, diesel, generated, payment)",
+      title: "Flats",
+      icon: Home,
+      href: "/flats",
+      description: "Flat mapping (29 flats per block)",
     },
     {
-      title: "Vehicle Ledger",
+      title: "Members/Residents",
+      icon: Users,
+      href: "/residents",
+      description: "Residents directory + profile view",
+    },
+  ],
+};
+
+const registrationMenu: MenuItemProps = {
+  title: "Registration",
+  icon: ClipboardSignature,
+  child: [
+    {
+      title: "New Registration",
+      icon: ClipboardSignature,
+      href: "/registration/new",
+      description: "Membership registration form",
+    },
+    {
+      title: "All Registrations",
+      icon: Search,
+      href: "/registration/list",
+      description: "Search/filter by block/flat/date",
+    },
+    {
+      title: "Approved Members",
+      icon: BadgeCheck,
+      href: "/registration/approved",
+      description: "Approved/verified registrations",
+    },
+  ],
+};
+
+const maintenanceMenu: MenuItemProps = {
+  title: "Maintenance",
+  icon: Wallet,
+  child: [
+    {
+      title: "Maintenance Entry",
+      icon: Wallet,
+      href: "/maintenance/entry",
+      description: "Collect monthly maintenance",
+    },
+    {
+      title: "Maintenance Ledger",
       icon: FileText,
-      href: "/vehicle-rent-ledger",
-      description: "Ledger view with filters + export",
+      href: "/maintenance/ledger",
+      description: "Block/flat-wise ledger view",
+    },
+    {
+      title: "Receipts",
+      icon: Receipt,
+      href: "/maintenance/receipts",
+      description: "Auto receipts + download history",
+    },
+  ],
+};
+
+const governanceMenu: MenuItemProps = {
+  title: "Governance",
+  icon: Bell,
+  child: [
+    {
+      title: "Letters / Notices",
+      icon: FileText,
+      href: "/letters",
+      description: "Committee letters & notices archive",
+    },
+    {
+      title: "Meetings",
+      icon: CalendarDays,
+      href: "/meetings",
+      description: "Agenda + attendance + uploads",
+    },
+  ],
+};
+
+const reportsMenu: MenuItemProps = {
+  title: "Reports",
+  icon: BarChart3,
+  child: [
+    {
+      title: "Monthly Summary",
+      icon: BarChart3,
+      href: "/reports/monthly",
+      description: "Monthly collection & expenses summary",
+    },
+    {
+      title: "Defaulter List",
+      icon: Bell,
+      href: "/reports/defaulters",
+      description: "Pending maintenance list by block/flat",
+    },
+    {
+      title: "Downloads",
+      icon: FileText,
+      href: "/reports/downloads",
+      description: "Export PDF/Excel (where applicable)",
+    },
+  ],
+};
+
+const adminMenu: MenuItemProps = {
+  title: "Admin",
+  icon: Settings,
+  child: [
+    {
+      title: "Roles & Permissions",
+      icon: ShieldCheck,
+      href: "/admin/roles",
+      description: "Resident / Block Admin / Treasurer controls",
+    },
+    {
+      title: "Users",
+      icon: UserCog,
+      href: "/admin/users",
+      description: "Create/manage login users",
+    },
+    {
+      title: "System Settings",
+      icon: Sliders,
+      href: "/admin/system-settings",
+      description: "Application settings & configuration",
+    },
+    {
+      title: "Admin Tools",
+      icon: Lock,
+      href: "/admin/tools",
+      description: "Restricted admin-only utilities",
+    },
+    {
+      title: "Deleted Records",
+      icon: Trash2,
+      href: "/admin/deleted-records",
+      description: "If enabled: view removed data",
     },
   ],
 };
@@ -70,74 +203,12 @@ export const menusConfig = {
   mainNav: [
     { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
 
-    {
-      title: "Site",
-      icon: Building2,
-      child: [
-        { title: "Create New Site", href: "/create-new-site", icon: PlusCircle },
-        { title: "All Site List", href: "/all-site-list", icon: List },
-        { title: "Site Exp Details", href: "/site-exp", icon: Receipt },
-        { title: "Site Profit Data", href: "/site-profit-data", icon: TrendingUp },
-      ],
-    },
-
-    {
-      title: "Ledger",
-      icon: BookOpen,
-      child: [
-        { title: "Create New Ledger", icon: PlusCircle, href: "/create-new-ledger" },
-        { title: "All Ledger List", icon: List, href: "/all-ledger" },
-        { title: "Staff / Supervisor", icon: UserCog, href: "/staff-ledger" },
-        { title: "Material Supplier", icon: Factory, href: "/material-supplier-ledger" },
-        { title: "Fuel Station", icon: Fuel, href: "/fuels-ledger" },
-        // ✅ Vehicle Rent removed from here (now separate menu)
-        { title: "Labour Contractor", icon: HardHat, href: "/labour-contractor-ledger" },
-        { title: "Other Party", icon: Users, href: "/party-ledger" },
-      ],
-    },
-
-    {
-      title: "Purchase",
-      icon: ShoppingCart,
-      child: [
-        { title: "Material Purchase", icon: Package, href: "/material-purchase-entry" },
-        { title: "Fuels Purchase", icon: Droplet, href: "/fuels-purchase-entry" },
-        { title: "Other Party Purchase", icon: Users, href: "/party-purchase-entry" },
-      ],
-    },
-
-    // ✅ Vehicle Rent menu after Purchase
-    vehicleRentMenu,
-
-    {
-      title: "Receipt",
-      icon: Receipt,
-      child: [
-        { title: "Department Voucher Entry", href: "/voucher-entry", icon: PlusCircle },
-        { title: "Voucher List", href: "/all-voucher-list", icon: List },
-        { title: "Party Receipt", href: "/party-reciept", icon: Receipt },
-      ],
-    },
-
-    {
-      title: "Payment",
-      icon: CreditCard,
-      child: [
-        { title: "Payment Entry", href: "/paymentEntry", icon: PlusCircle },
-        { title: "Payment List", href: "/all-payment-list", icon: List },
-      ],
-    },
-
-    {
-      title: "Settings",
-      icon: Settings,
-      child: [
-        { title: "Audit Log", href: "/audit-log", icon: ShieldCheck },
-        { title: "Deleted Records", href: "/deleted-records", icon: Trash2 },
-        { title: "Admin Tools", href: "/admin-tools", icon: Lock },
-        { title: "System Settings", href: "/system-settings", icon: Sliders },
-      ],
-    },
+    societyMasterMenu,
+    registrationMenu,
+    maintenanceMenu,
+    governanceMenu,
+    reportsMenu,
+    adminMenu,
   ],
 
   /* =========================
@@ -147,73 +218,12 @@ export const menusConfig = {
     modern: [
       { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
 
-      {
-        title: "Site",
-        icon: Building2,
-        child: [
-          { title: "Create New Site", href: "/create-new-site", icon: PlusCircle },
-          { title: "All Site List", href: "/all-site-list", icon: List },
-          { title: "Site Exp Details", href: "/site-exp", icon: Receipt },
-          { title: "Site Profit Data", href: "/site-profit-data", icon: TrendingUp },
-        ],
-      },
-
-      {
-        title: "Ledger",
-        icon: BookOpen,
-        child: [
-          { title: "Create New Ledger", href: "/create-new-ledger", icon: PlusCircle },
-          { title: "All Ledger List", href: "/all-ledger", icon: List },
-          { title: "Staff / Supervisor", href: "/staff-ledger", icon: UserCog },
-          { title: "Material Supplier", href: "/material-supplier-ledger", icon: Factory },
-          { title: "Fuel Station", href: "/fuels-ledger", icon: Fuel },
-          { title: "Labour Contractor", href: "/labour-contractor-ledger", icon: HardHat },
-          { title: "Other Party", href: "/party-ledger", icon: Users },
-        ],
-      },
-
-      {
-        title: "Purchase",
-        icon: ShoppingCart,
-        child: [
-          { title: "Material Purchase", href: "/material-purchase-entry", icon: Package },
-          { title: "Fuels Purchase", href: "/fuels-purchase-entry", icon: Droplet },
-          { title: "Other Party Purchase", href: "/party-purchase-entry", icon: Users },
-        ],
-      },
-
-      // ✅ Vehicle Rent after Purchase (modern)
-      vehicleRentMenu,
-
-      {
-        title: "Receipt",
-        icon: Receipt,
-        child: [
-          { title: "Department Voucher Entry", href: "/voucher-entry", icon: PlusCircle },
-          { title: "Voucher List", href: "/all-voucher-list", icon: List },
-          { title: "Party Receipt", href: "/party-reciept", icon: Receipt },
-        ],
-      },
-
-      {
-        title: "Payment",
-        icon: CreditCard,
-        child: [
-          { title: "Payment Entry", href: "/paymentEntry", icon: PlusCircle },
-          { title: "Payment List", href: "/all-payment-list", icon: List },
-        ],
-      },
-
-      {
-        title: "Settings",
-        icon: Settings,
-        child: [
-          { title: "Audit Log", href: "/audit-log", icon: ShieldCheck },
-          { title: "Deleted Records", href: "/deleted-records", icon: Trash2 },
-          { title: "Admin Tools", href: "/admin-tools", icon: Lock },
-          { title: "System Settings", href: "/system-settings", icon: Sliders },
-        ],
-      },
+      societyMasterMenu,
+      registrationMenu,
+      maintenanceMenu,
+      governanceMenu,
+      reportsMenu,
+      adminMenu,
     ],
 
     classic: [
@@ -222,77 +232,45 @@ export const menusConfig = {
       { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
 
       {
-        title: "Site",
-        icon: Building2,
-        child: [
-          { title: "Create New Site", href: "/create-new-site", icon: PlusCircle },
-          { title: "All Site List", href: "/all-site-list", icon: List },
-          { title: "Site Exp Details", href: "/site-exp", icon: Receipt },
-          { title: "Site Profit Data", href: "/site-profit-data", icon: TrendingUp },
-        ],
-      },
-
-      {
-        title: "Ledger",
-        icon: BookOpen,
-        child: [
-          { title: "Create New Ledger", href: "/create-new-ledger", icon: PlusCircle },
-          { title: "All Ledger List", href: "/all-ledger", icon: List },
-          { title: "Staff / Supervisor", href: "/staff-ledger", icon: UserCog },
-          { title: "Material Supplier", href: "/material-supplier-ledger", icon: Factory },
-          { title: "Fuel Station", href: "/fuels-ledger", icon: Fuel },
-          { title: "Labour Contractor", href: "/labour-contractor-ledger", icon: HardHat },
-          { title: "Other Party", href: "/party-ledger", icon: Users },
-        ],
-      },
-
-      {
-        title: "Purchase",
-        icon: ShoppingCart,
+        title: societyMasterMenu.title,
+        icon: societyMasterMenu.icon,
         href: "#",
-        child: [
-          { title: "Material Purchase", href: "/material-purchase-entry", icon: Package },
-          { title: "Fuels Purchase", href: "/fuels-purchase-entry", icon: Droplet },
-          { title: "Other Party Purchase", href: "/party-purchase-entry", icon: Users },
-        ],
+        child: societyMasterMenu.child,
       },
 
-      // ✅ Vehicle Rent after Purchase (classic)
       {
-        title: vehicleRentMenu.title,
-        icon: vehicleRentMenu.icon,
+        title: registrationMenu.title,
+        icon: registrationMenu.icon,
         href: "#",
-        child: vehicleRentMenu.child,
+        child: registrationMenu.child,
       },
 
       {
-        title: "Receipt",
-        icon: Receipt,
-        child: [
-          { title: "Department Voucher Entry", href: "/voucher-entry", icon: PlusCircle },
-          { title: "Voucher List", href: "/all-voucher-list", icon: List },
-          { title: "Party Receipt", href: "/party-reciept", icon: Receipt },
-        ],
+        title: maintenanceMenu.title,
+        icon: maintenanceMenu.icon,
+        href: "#",
+        child: maintenanceMenu.child,
       },
 
       {
-        title: "Payment",
-        icon: CreditCard,
-        child: [
-          { title: "Payment Entry", href: "/paymentEntry", icon: PlusCircle },
-          { title: "Payment List", href: "/all-payment-list", icon: List },
-        ],
+        title: governanceMenu.title,
+        icon: governanceMenu.icon,
+        href: "#",
+        child: governanceMenu.child,
       },
 
       {
-        title: "Settings",
-        icon: Settings,
-        child: [
-          { title: "Audit Log", href: "/audit-log", icon: ShieldCheck },
-          { title: "Deleted Records", href: "/deleted-records", icon: Trash2 },
-          { title: "Admin Tools", href: "/admin-tools", icon: Lock },
-          { title: "System Settings", href: "/system-settings", icon: Sliders },
-        ],
+        title: reportsMenu.title,
+        icon: reportsMenu.icon,
+        href: "#",
+        child: reportsMenu.child,
+      },
+
+      {
+        title: adminMenu.title,
+        icon: adminMenu.icon,
+        href: "#",
+        child: adminMenu.child,
       },
     ],
   },

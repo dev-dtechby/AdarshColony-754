@@ -1,11 +1,5 @@
-import React from "react";
-// import LandingPage from "@/components/landing-page";
-import LoginPage from "./auth/(login)/login/page";
+import LoginView from "./auth/(login)/login/LoginView";
 
-
-const page = () => {
-  // return <LandingPage />;
-  return <LoginPage />
-};
-
-export default page;
+export default function Page() {
+  return <LoginView />;
+}

@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Registration {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  registrationNo  String   @unique
+
+  date            DateTime
+  headFirstName   String
+  headLastName    String?
+  headName        String
+
+  residentType    String   // OWNER / TENANT
+  gender          String   // MALE / FEMALE / OTHER
+
+  blockNo         String
+  flatNo          String
+
+  dob             DateTime?
+  bloodGroup      String?
+  email           String?
+  profession      String?
+
+  mobileNo        String
+  whatsappNo      String?
+  totalMembers    Int?
+
+  photoUrl        String?
+
+  familyMembers   Json?    // [{name:""}...]
+  emergency       Json?    // {nameFamilyMember,mobile1,nameFriend,mobile2}
+
+  twoWheelerCount Int?
+  fourWheelerCount Int?
+  twoWheelers     Json?    // [{vehicleNo,type}...]
+  fourWheelers    Json?    // [{vehicleNo,type}...]
+
+  agree           Boolean  @default(false)
+
+  @@index([blockNo, flatNo])
+}

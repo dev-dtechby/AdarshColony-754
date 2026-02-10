@@ -47,6 +47,6 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".contentlayer/generated"
-  ],
+, "middleware.ts.bak"  ],
   "exclude": ["node_modules"]
 }
