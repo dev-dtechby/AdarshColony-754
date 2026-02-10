@@ -1,0 +1,12 @@
+{
+  "buildCommand": "next build",
+  "framework": "nextjs",
+  "ignoreCommand": "echo \"skip\"",
+  "functions": {},
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ]
+}

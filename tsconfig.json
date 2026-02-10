@@ -50,7 +50,7 @@
     "app/[lang]/(dashboard)/(chart)/(re-chart)/charts-rechart-bar/barchart-with-multixaxis.tsx"
 , "middleware.ts"  ],
   "exclude": [
-    "branao-backend",
+    "adarsh-backend",
     "node_modules"
   ]
 }
