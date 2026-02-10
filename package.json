@@ -148,7 +148,7 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
-    "@faker-js/faker": "^8.2.0",
+    "@faker-js/faker": "^8.4.1",
     "@svgr/webpack": "^8.1.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
