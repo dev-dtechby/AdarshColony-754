@@ -16,7 +16,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@emoji-mart/data": "^1.1.2",
     "@emoji-mart/react": "^1.1.1",
-    "@faker-js/faker": "^10.3.0",
+    "@faker-js/faker": "^8.4.1",
     "@formatjs/intl-localematcher": "^0.5.4",
     "@fullcalendar/core": "^6.1.13",
     "@fullcalendar/daygrid": "^6.1.9",
