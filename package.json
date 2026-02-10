@@ -58,6 +58,7 @@
     "@react-email/components": "^0.0.16",
     "@smastrom/react-rating": "^1.4.0",
     "@south-paw/react-vector-maps": "^3.2.0",
+    "@svgr/webpack": "^8.1.0",
     "@tanstack/react-query": "^5.8.3",
     "@tanstack/react-query-devtools": "^5.8.3",
     "@tanstack/react-table": "^8.9.8",
@@ -149,7 +150,6 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
-    "@svgr/webpack": "^8.1.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/morgan": "^1.9.10",
