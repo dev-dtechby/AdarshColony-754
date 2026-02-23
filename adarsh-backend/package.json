@@ -5,6 +5,8 @@
   "main": "dist/server.js",
   "type": "commonjs",
   "scripts": {
+    "db:reset:all": "tsx scripts/reset-db.ts",
+    "db:reset:members": "tsx scripts/reset-members.ts",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
@@ -49,6 +51,7 @@
     "prisma": "^6.19.1",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }
