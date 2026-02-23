@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import {
   getMembersHandler,
@@ -24,11 +24,26 @@ const upload = multer({
 });
 
 // =====================
+// HELPERS (route-level)
+// =====================
+
+// ✅ Rented-only list: we reuse getMembersHandler by injecting a query flag
+const rentedOnly: RequestHandler = (req, _res, next) => {
+  // controller/service should read this flag to filter rented records
+  // e.g. req.query.rented === "1"
+  (req.query as any).rented = "1";
+  next();
+};
+
+// =====================
 // ROUTES
 // =====================
 
-// List/Search/Sort
+// ✅ List/Search/Sort (Example query: ?block=ALL|6&sort=blockFlat|name&q=...&rented=1)
 router.get("/", getMembersHandler);
+
+// ✅ Rented list (separate endpoint)
+router.get("/rented", rentedOnly, getMembersHandler);
 
 // Excel Import (keep ABOVE "/:id")
 router.post("/import", upload.single("file"), importMembersExcelHandler);

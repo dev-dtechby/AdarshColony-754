@@ -60,11 +60,17 @@ function getMobileFromRow(row: Record<string, any>) {
   );
 }
 
+function isTruthyQuery(v: any) {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "y";
+}
+
 // =====================
-// LIST / SEARCH
+// LIST / SEARCH  ✅ rental columns + rentedOnly + insensitive
 // =====================
-export async function listMembers(opts: { block: string; q: string; sort: SortMode }) {
+export async function listMembers(opts: { block: string; q: string; sort: SortMode; rentedOnly?: boolean }) {
   const { block, q, sort } = opts;
+  const rentedOnly = isTruthyQuery((opts as any).rentedOnly);
 
   const where: Prisma.ColonyMemberWhereInput = {};
 
@@ -73,27 +79,91 @@ export async function listMembers(opts: { block: string; q: string; sort: SortMo
     if (Number.isFinite(b) && b > 0) where.blockNo = b;
   }
 
-  if (q) {
+  // ✅ rentedOnly filter (DB-level)
+  if (rentedOnly) {
     where.OR = [
-      { name: { contains: q } },
-      { fatherOrHusbandName: { contains: q } },
-      { mobileNo: { contains: q } },
-      { memberCode: { contains: q } }, // may be null for non-registered
+      { rentalName: { not: null } },
+      { rentalMobileNo: { not: null } },
+      { rentAgreementUrl: { not: null } },
+      { policeVerifyUrl: { not: null } },
     ];
+  }
+
+  // ✅ q search (case-insensitive) + includes rental fields also
+  if (q) {
+        const qOR: Prisma.ColonyMemberWhereInput[] = [
+          { name: { contains: q } },
+          { fatherOrHusbandName: { contains: q } },
+          { mobileNo: { contains: q } },
+          { memberCode: { contains: q } },
+          { rentalName: { contains: q } },
+          { rentalMobileNo: { contains: q } },
+        ];
+
+    // If already OR exists (rentedOnly), combine safely using AND
+    if (where.OR) {
+      where.AND = [{ OR: where.OR }, { OR: qOR }];
+      delete (where as any).OR;
+    } else {
+      where.OR = qOR;
+    }
   }
 
   const orderBy: Prisma.ColonyMemberOrderByWithRelationInput[] =
     sort === "name" ? [{ name: "asc" }] : [{ blockNo: "asc" }, { flatNo: "asc" }];
 
-  return prisma.colonyMember.findMany({ where, orderBy });
+  // ✅ Select only required fields for UI + rental docs
+  const rows = await prisma.colonyMember.findMany({
+    where,
+    orderBy,
+    select: {
+      id: true,
+      serialNo: true,
+      memberCode: true,
+      name: true,
+      fatherOrHusbandName: true,
+      mobileNo: true,
+      blockNo: true,
+      floor: true,
+      flatNo: true,
+
+      rentalName: true,
+      rentalMobileNo: true,
+      rentAgreementUrl: true,
+      rentAgreementPid: true,
+
+      policeVerifyUrl: true,
+      policeVerifyPid: true,
+
+      registeredAt: true,
+      createdAt: true,
+      updatedAt: true,
+    } as any,
+  });
+
+  // ✅ Frontend compatibility alias:
+  // - UI में अक्सर "policeVerificationUrl" नाम रखा जाता है
+  return rows.map((r: any) => ({
+    ...r,
+    policeVerificationUrl: r.policeVerifyUrl ?? null,
+    policeVerificationPid: r.policeVerifyPid ?? null,
+  }));
 }
 
 export async function getMemberById(id: string) {
-  return prisma.colonyMember.findUnique({ where: { id } });
+  const r: any = await prisma.colonyMember.findUnique({ where: { id } });
+  if (!r) return null;
+
+  return {
+    ...r,
+    policeVerificationUrl: r.policeVerifyUrl ?? null,
+    policeVerificationPid: r.policeVerifyPid ?? null,
+  };
 }
 
 // =====================
 // ✅ REGISTRATION NO ASSIGN (ONLY AFTER REGISTRATION)
+// ✅ SERIAL NEVER REPEAT (requires RegistrationSerial table)
 // =====================
 export async function assignRegistrationNo(blockNo: number, flatNo: number) {
   for (let attempt = 1; attempt <= 5; attempt++) {
@@ -108,21 +178,25 @@ export async function assignRegistrationNo(blockNo: number, flatNo: number) {
         }
 
         // Already registered
-        if (existing.memberCode) return existing;
+        if ((existing as any).memberCode) return existing;
 
-        // ✅ MAX ignores null in SQL; so no need "not: null" filter (avoids TS null error)
-        const agg = await tx.colonyMember.aggregate({ _max: { serialNo: true } });
-        const nextSerial = (agg._max?.serialNo ?? 0) + 1;
+        // ✅ Issue serial from separate table (never repeats even after deletes)
+        // IMPORTANT: Add Prisma model "RegistrationSerial" (below in note)
+        const issued = await (tx as any).registrationSerial.create({
+          data: { prefix: PREFIX },
+          select: { id: true },
+        });
 
+        const nextSerial = Number(issued.id);
         const memberCode = `${PREFIX}-${pad4(nextSerial)}-${blockNo}-${flatNo}`;
 
         return tx.colonyMember.update({
-          where: { id: existing.id },
+          where: { id: (existing as any).id },
           data: {
             serialNo: nextSerial,
             memberCode,
             registeredAt: new Date(),
-          },
+          } as any,
         });
       });
     } catch (e: any) {
@@ -162,13 +236,13 @@ export async function createMember(input: {
     if (existing) {
       // ✅ Update master info only; DO NOT touch memberCode/serialNo
       return tx.colonyMember.update({
-        where: { id: existing.id },
+        where: { id: (existing as any).id },
         data: {
           name: input.name,
           fatherOrHusbandName: input.fatherOrHusbandName,
           mobileNo: input.mobileNo,
           floor: input.floor,
-        },
+        } as any,
       });
     }
 
@@ -181,8 +255,6 @@ export async function createMember(input: {
         blockNo: input.blockNo,
         floor: input.floor,
         flatNo: input.flatNo,
-        // serialNo: null,
-        // memberCode: null,
       } as any,
     });
   });
@@ -200,7 +272,7 @@ export async function updateMember(
   }>
 ) {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.colonyMember.findUnique({ where: { id } });
+    const existing: any = await tx.colonyMember.findUnique({ where: { id } });
     if (!existing) throw new Error("Member not found");
 
     const newBlock = input.blockNo ?? existing.blockNo;
@@ -300,7 +372,7 @@ export async function importMembersFromExcel(
   });
 
   const existingMap = new Map<string, { id: string }>();
-  for (const e of existing) existingMap.set(`${e.blockNo}-${e.flatNo}`, { id: e.id });
+  for (const e of existing as any[]) existingMap.set(`${e.blockNo}-${e.flatNo}`, { id: e.id });
 
   const createData: Prisma.ColonyMemberCreateManyInput[] = [];
   const updateData: Array<{ id: string; data: Prisma.ColonyMemberUpdateInput }> = [];
@@ -386,18 +458,18 @@ export async function upsertRentalByFlat(input: {
   if (!blockNo || !flatNo) throw new Error("blockNo and flatNo are required");
   if (!rentalName) throw new Error("rentalName is required");
 
-  const existing = await prisma.colonyMember.findUnique({
+  const existing: any = await prisma.colonyMember.findUnique({
     where: { blockNo_flatNo: { blockNo, flatNo } },
   });
 
   if (!existing) throw new Error("Owner/master record not found. Please import member list first.");
 
-  // Prepare existing doc fields (these fields must exist in schema)
-  let rentAgreementUrl = (existing as any).rentAgreementUrl ?? null;
-  let rentAgreementPid = (existing as any).rentAgreementPid ?? null;
+  // Existing doc fields
+  let rentAgreementUrl = existing.rentAgreementUrl ?? null;
+  let rentAgreementPid = existing.rentAgreementPid ?? null;
 
-  let policeVerifyUrl = (existing as any).policeVerifyUrl ?? null;
-  let policeVerifyPid = (existing as any).policeVerifyPid ?? null;
+  let policeVerifyUrl = existing.policeVerifyUrl ?? null;
+  let policeVerifyPid = existing.policeVerifyPid ?? null;
 
   const folder = `adarshapp/rentals/block-${blockNo}/flat-${flatNo}`;
 
@@ -417,7 +489,7 @@ export async function upsertRentalByFlat(input: {
     policeVerifyPid = up.public_id;
   }
 
-  return prisma.colonyMember.update({
+  const updated: any = await prisma.colonyMember.update({
     where: { id: existing.id },
     data: {
       rentalName,
@@ -428,25 +500,32 @@ export async function upsertRentalByFlat(input: {
       policeVerifyPid,
     } as any,
   });
+
+  // Alias for frontend
+  return {
+    ...updated,
+    policeVerificationUrl: updated.policeVerifyUrl ?? null,
+    policeVerificationPid: updated.policeVerifyPid ?? null,
+  };
 }
 
 export async function clearRentalByFlat(input: { blockNo: number; flatNo: number }) {
   const { blockNo, flatNo } = input;
   if (!blockNo || !flatNo) throw new Error("blockNo and flatNo are required");
 
-  const existing = await prisma.colonyMember.findUnique({
+  const existing: any = await prisma.colonyMember.findUnique({
     where: { blockNo_flatNo: { blockNo, flatNo } },
   });
 
   if (!existing) throw new Error("Owner/master record not found.");
 
-  const rentAgreementPid = (existing as any).rentAgreementPid as string | null;
-  const policeVerifyPid = (existing as any).policeVerifyPid as string | null;
+  const rentAgreementPid = existing.rentAgreementPid as string | null;
+  const policeVerifyPid = existing.policeVerifyPid as string | null;
 
   if (rentAgreementPid) await deleteFromCloudinary(rentAgreementPid);
   if (policeVerifyPid) await deleteFromCloudinary(policeVerifyPid);
 
-  return prisma.colonyMember.update({
+  const updated: any = await prisma.colonyMember.update({
     where: { id: existing.id },
     data: {
       rentalName: null,
@@ -457,4 +536,10 @@ export async function clearRentalByFlat(input: { blockNo: number; flatNo: number
       policeVerifyPid: null,
     } as any,
   });
+
+  return {
+    ...updated,
+    policeVerificationUrl: updated.policeVerifyUrl ?? null,
+    policeVerificationPid: updated.policeVerifyPid ?? null,
+  };
 }
