@@ -6,6 +6,7 @@ import morgan from "morgan";
 // ROUTES (AdarshApp)
 // ====================
 import registrationRoutes from "./modules/registration/registration.routes";
+import memberRoutes from "./modules/member/member.routes";
 
 const app = express();
 
@@ -14,7 +15,7 @@ const app = express();
 // ====================
 const allowedOrigins = [
   "http://localhost:3000",
-  // 👉 Production frontend domains (enable when deployed)
+  // Production frontend domains (enable when deployed)
   // "https://adarshapp.in",
   // "https://www.adarshapp.in",
   // "https://adarshapp.vercel.app",
@@ -43,10 +44,7 @@ app.use(
 // ====================
 app.disable("etag");
 app.use((_req, res, next) => {
-  res.setHeader(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate, proxy-revalidate"
-  );
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
@@ -72,12 +70,18 @@ app.get("/", (_req, res) => {
 // ====================
 app.use("/api/registration", registrationRoutes);
 
+// ✅ Members routes MUST be before 404
+app.use("/api/colony-members", memberRoutes);
+
+// (Optional alias) अगर कभी frontend में /api/members कर दिया तो भी चले
+app.use("/api/members", memberRoutes);
+
 // ====================
-// 404 HANDLER
+// 404 HANDLER (always at end)
 // ====================
 app.use((_req, res) => {
   res.status(404).json({
-    success: false,
+    ok: false,
     message: "Route not found",
   });
 });

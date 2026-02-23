@@ -48,3 +48,35 @@ model Registration {
 
   @@index([blockNo, flatNo])
 }
+
+model ColonyMember {
+  id                  String   @id @default(cuid())
+
+  serialNo            Int?     @unique
+  memberCode          String?  @unique
+  registeredAt        DateTime?
+
+  name                String
+  fatherOrHusbandName String?
+  mobileNo            String?
+  blockNo             Int
+  floor               String?
+  flatNo              Int
+
+  // ✅ tenant
+  rentalName          String?
+  rentalMobileNo      String?
+
+  // ✅ documents (Cloudinary)
+  rentAgreementUrl    String?
+  rentAgreementPid    String?
+  policeVerifyUrl     String?
+  policeVerifyPid     String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([blockNo, flatNo])
+  @@index([blockNo])
+  @@index([name])
+}

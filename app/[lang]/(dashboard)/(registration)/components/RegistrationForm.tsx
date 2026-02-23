@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/use-toast";
 import FamilyMembersDynamic, { FamilyMember } from "./FamilyMembersDynamic";
 import VehiclesDynamic, { VehicleRow } from "./VehiclesDynamic";
 import TermsBox from "./TermsBox";
+import MemberPrefillPicker, { ColonyMemberLite } from "./MemberPrefillPicker";
 
 type ResidentType = "OWNER" | "TENANT";
 type Gender = "MALE" | "FEMALE" | "OTHER";
@@ -36,6 +37,9 @@ export default function RegistrationForm() {
   // ================== API ==================
   const BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
   const REG_API = `${BASE_URL}/api/registration`;
+
+  // ================== MODE (NEW) ==================
+  const [entryMode, setEntryMode] = useState<"PREFILL" | "FRESH">("PREFILL");
 
   // ================== BASIC ==================
   const [date, setDate] = useState("");
@@ -118,6 +122,32 @@ export default function RegistrationForm() {
     setFourWheelers([{ vehicleNo: "", type: "" }]);
 
     setAgree(false);
+
+    // ✅ back to prefill mode by default
+    setEntryMode("PREFILL");
+  };
+
+  // ✅ Prefill apply
+  const applyMemberPrefill = (m: ColonyMemberLite) => {
+    const nm = (m.name || "").trim();
+    const parts = nm.split(/\s+/);
+
+    setHeadFirstName(parts[0] ?? "");
+    setHeadLastName(parts.slice(1).join(" "));
+    setBlockNo(String(m.blockNo ?? ""));
+    setFlatNo(String(m.flatNo ?? ""));
+
+    const mob = m.mobileNo ? String(m.mobileNo) : "";
+    setMobileNo(mob);
+    if (!whatsappNo && mob) setWhatsappNo(mob);
+
+    toast({
+      title: "Auto-Fill Done",
+      description: "Name, Block, Flat, Mobile भर दिया गया है. बाकी details भर दें.",
+    });
+
+    // ✅ now show the actual form
+    setEntryMode("FRESH");
   };
 
   const validate = () => {
@@ -177,18 +207,22 @@ export default function RegistrationForm() {
 
     fd.append(
       "twoWheelers",
-      JSON.stringify(clamp5(twoWheelers).map((v) => ({
-        vehicleNo: (v.vehicleNo || "").trim(),
-        type: (v.type || "").trim(),
-      })))
+      JSON.stringify(
+        clamp5(twoWheelers).map((v) => ({
+          vehicleNo: (v.vehicleNo || "").trim(),
+          type: (v.type || "").trim(),
+        }))
+      )
     );
 
     fd.append(
       "fourWheelers",
-      JSON.stringify(clamp5(fourWheelers).map((v) => ({
-        vehicleNo: (v.vehicleNo || "").trim(),
-        type: (v.type || "").trim(),
-      })))
+      JSON.stringify(
+        clamp5(fourWheelers).map((v) => ({
+          vehicleNo: (v.vehicleNo || "").trim(),
+          type: (v.type || "").trim(),
+        }))
+      )
     );
 
     fd.append("agree", String(agree));
@@ -199,7 +233,7 @@ export default function RegistrationForm() {
   const handleSubmit = async () => {
     const err = validate();
     if (err) {
-      toast({ title: "❌ Validation Error", description: err });
+      toast({ title: "Validation Error", description: err });
       return;
     }
 
@@ -223,13 +257,13 @@ export default function RegistrationForm() {
       if (!res.ok) throw new Error(json?.message || `Registration failed (HTTP ${res.status})`);
 
       toast({
-        title: "✅ Registration Submitted",
+        title: "Registration Submitted",
         description: json?.message || "Form submitted successfully.",
       });
 
       resetForm();
     } catch (e: any) {
-      toast({ title: "❌ Error", description: e?.message || "Registration failed" });
+      toast({ title: "Error", description: e?.message || "Registration failed" });
     } finally {
       setLoading(false);
     }
@@ -244,6 +278,38 @@ export default function RegistrationForm() {
           Adarsh Colony 754 — सभी fields भरें (Photo optional).
         </p>
       </div>
+
+      {/* ✅ Mode Buttons */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <Button
+          type="button"
+          variant={entryMode === "PREFILL" ? "outline" : "ghost"}
+          onClick={() => setEntryMode("PREFILL")}
+          disabled={loading}
+        >
+          Existing Member (Auto-Fill)
+        </Button>
+
+        <Button
+          type="button"
+          variant={entryMode === "FRESH" ? "outline" : "ghost"}
+          onClick={() => setEntryMode("FRESH")}
+          disabled={loading}
+        >
+          Fresh Entry
+        </Button>
+
+        {entryMode === "FRESH" && (
+          <Button type="button" variant="soft" onClick={resetForm} disabled={loading}>
+            Clear Form
+          </Button>
+        )}
+      </div>
+
+      {/* ✅ Prefill Picker at start */}
+      {entryMode === "PREFILL" && (
+        <MemberPrefillPicker onSelect={applyMemberPrefill} />
+      )}
 
       {/* Date + Photo */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -332,21 +398,12 @@ export default function RegistrationForm() {
 
           <div className="space-y-1">
             <Label>Email Id</Label>
-            <Input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              type="email"
-              placeholder="name@email.com"
-            />
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@email.com" />
           </div>
 
           <div className="space-y-1">
             <Label>Profession</Label>
-            <Input
-              value={profession}
-              onChange={(e) => setProfession(e.target.value)}
-              placeholder="Ex: Business / Service"
-            />
+            <Input value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="Ex: Business / Service" />
           </div>
         </div>
 
@@ -368,7 +425,7 @@ export default function RegistrationForm() {
         </div>
       </div>
 
-      {/* Family Members (dynamic purchase-style) */}
+      {/* Family Members */}
       <FamilyMembersDynamic value={familyMembers} onChange={setFamilyMembers} max={5} />
 
       {/* Emergency */}
@@ -414,7 +471,7 @@ export default function RegistrationForm() {
         </div>
       </div>
 
-      {/* Vehicles (dynamic purchase-style) */}
+      {/* Vehicles */}
       <div className="space-y-4">
         <div className="text-lg font-semibold">Vehicle’s Details</div>
 

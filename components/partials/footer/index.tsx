@@ -83,7 +83,7 @@ const FooterContent = () => {
   return (
     <div className="block md:flex md:justify-between text-muted-foreground">
       <p className="sm:mb-0 text-xs md:text-sm">
-        COPYRIGHT © {new Date().getFullYear()} Branao ERP All rights Reserved
+        COPYRIGHT © {new Date().getFullYear()} Adarsh Colony 754 All rights Reserved
       </p>
       <p className="mb-0 text-xs md:text-sm">
         Hand-crafted & Made by{" "}

@@ -45,22 +45,16 @@ const societyMasterMenu: MenuItemProps = {
   icon: Building2,
   child: [
     {
-      title: "Blocks",
+      title: "All Residents",
       icon: Building2,
-      href: "/blocks",
-      description: "Create/manage 26 blocks",
+      href: "/all-member-list",
+      description: "manage 26 blocks",
     },
     {
-      title: "Flats",
-      icon: Home,
-      href: "/flats",
-      description: "Flat mapping (29 flats per block)",
-    },
-    {
-      title: "Members/Residents",
-      icon: Users,
-      href: "/residents",
-      description: "Residents directory + profile view",
+      title: "Add Rental",
+      icon: Building2,
+      href: "/add-rental",
+      description: "Add tenant details for a flat",
     },
   ],
 };
